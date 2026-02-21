@@ -21,6 +21,9 @@ data class ConnectionSettingsUiState(
     val connectivityMessage: String? = null,
     val isSaving: Boolean = false,
     val saveResult: SaveResult = SaveResult.None,
+    val isLoggingOut: Boolean = false,
+    val logoutResult: LogoutResult = LogoutResult.None,
+    val logoutMessage: String? = null,
 ) {
     enum class ConnectivityResult {
         None,
@@ -29,6 +32,12 @@ data class ConnectionSettingsUiState(
     }
 
     enum class SaveResult {
+        None,
+        Success,
+        Error,
+    }
+
+    enum class LogoutResult {
         None,
         Success,
         Error,

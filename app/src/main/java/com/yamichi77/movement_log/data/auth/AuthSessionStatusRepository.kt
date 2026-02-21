@@ -29,6 +29,8 @@ interface AuthSessionStatusRepository {
 
     suspend fun markRefreshSucceeded()
 
+    suspend fun clearSession()
+
     suspend fun markReauthRequired(
         reason: AuthErrorCode,
         detectedAtEpochMillis: Long = System.currentTimeMillis(),
@@ -72,6 +74,16 @@ class DataStoreAuthSessionStatusRepository(
             preferences[ReauthRequiredKey] = false
             preferences.remove(ReauthReasonKey)
             preferences.remove(ReauthDetectedAtEpochMillisKey)
+        }
+    }
+
+    override suspend fun clearSession() {
+        appContext.authSessionStatusDataStore.edit { preferences ->
+            preferences[IsSessionManagedKey] = false
+            preferences[ReauthRequiredKey] = false
+            preferences.remove(ReauthReasonKey)
+            preferences.remove(ReauthDetectedAtEpochMillisKey)
+            preferences.remove(LastReauthNotifiedAtEpochMillisKey)
         }
     }
 

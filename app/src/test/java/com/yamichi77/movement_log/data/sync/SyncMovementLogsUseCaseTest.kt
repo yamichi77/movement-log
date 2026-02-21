@@ -176,6 +176,8 @@ class SyncMovementLogsUseCaseTest {
             settingsState.value = settings
             return ConnectivityTestResult(sessionRotated = false)
         }
+
+        override suspend fun logout() = Unit
     }
 
     private class FakeMovementLogUploadRepository(
@@ -237,6 +239,10 @@ class SyncMovementLogsUseCaseTest {
 
         override fun setAccessToken(token: String?) {
             tokenState.value = token
+        }
+
+        override suspend fun logout(baseUrl: String) {
+            tokenState.value = null
         }
     }
 }

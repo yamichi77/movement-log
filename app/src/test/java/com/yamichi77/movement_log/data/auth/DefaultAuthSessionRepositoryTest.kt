@@ -26,10 +26,12 @@ class DefaultAuthSessionRepositoryTest {
             ),
         )
         val statusRepository = FakeAuthSessionStatusRepository()
+        val cookieStore = FakeAuthCookieStore()
         val repository = DefaultAuthSessionRepository(
             authApi = authApi,
             sessionStore = AuthSessionStore(),
             sessionStatusRepository = statusRepository,
+            authCookieStore = cookieStore,
         )
 
         repository.refreshAccessToken("https://portal.yamichi.com")
@@ -46,10 +48,12 @@ class DefaultAuthSessionRepositoryTest {
             ),
         )
         val statusRepository = FakeAuthSessionStatusRepository()
+        val cookieStore = FakeAuthCookieStore()
         val repository = DefaultAuthSessionRepository(
             authApi = authApi,
             sessionStore = AuthSessionStore(),
             sessionStatusRepository = statusRepository,
+            authCookieStore = cookieStore,
         )
 
         runCatching { repository.refreshAccessToken("https://portal.yamichi.com") }
@@ -63,10 +67,12 @@ class DefaultAuthSessionRepositoryTest {
             refreshError = SessionInvalidException("invalid"),
         )
         val statusRepository = FakeAuthSessionStatusRepository()
+        val cookieStore = FakeAuthCookieStore()
         val repository = DefaultAuthSessionRepository(
             authApi = authApi,
             sessionStore = AuthSessionStore(),
             sessionStatusRepository = statusRepository,
+            authCookieStore = cookieStore,
         )
 
         runCatching { repository.refreshAccessToken("https://portal.yamichi.com") }
@@ -77,11 +83,35 @@ class DefaultAuthSessionRepositoryTest {
         assertTrue(event?.reason == AuthErrorCode.SESSION_INVALID)
     }
 
+    @Test
+    fun logout_clearsLocalSessionState() = runTest {
+        val authApi = FakeBffAuthApi()
+        val statusRepository = FakeAuthSessionStatusRepository()
+        val cookieStore = FakeAuthCookieStore()
+        val repository = DefaultAuthSessionRepository(
+            authApi = authApi,
+            sessionStore = AuthSessionStore(),
+            sessionStatusRepository = statusRepository,
+            authCookieStore = cookieStore,
+        )
+        repository.setAccessToken("active-token")
+
+        repository.logout("https://portal.yamichi.com")
+
+        assertEquals(1, authApi.logoutCalls)
+        assertEquals("active-token", authApi.lastLogoutAccessToken)
+        assertEquals(1, statusRepository.clearSessionCalls)
+        assertEquals(1, cookieStore.clearCalls)
+        assertEquals(null, repository.accessToken.value)
+    }
+
     private class FakeBffAuthApi(
         private val refreshResult: RefreshAccessTokenResult? = null,
         private val refreshError: Throwable? = null,
     ) : BffAuthApi {
         var refreshCalls: Int = 0
+        var logoutCalls: Int = 0
+        var lastLogoutAccessToken: String? = null
 
         override suspend fun refreshAccessToken(baseUrl: String): RefreshAccessTokenResult {
             refreshCalls += 1
@@ -92,7 +122,18 @@ class DefaultAuthSessionRepositoryTest {
             )
         }
 
-        override suspend fun logout(baseUrl: String) = Unit
+        override suspend fun logout(baseUrl: String, accessToken: String?) {
+            logoutCalls += 1
+            lastLogoutAccessToken = accessToken
+        }
+    }
+
+    private class FakeAuthCookieStore : AuthCookieStore {
+        var clearCalls: Int = 0
+
+        override fun clear() {
+            clearCalls += 1
+        }
     }
 
     private class FakeAuthSessionStatusRepository : AuthSessionStatusRepository {
@@ -100,6 +141,7 @@ class DefaultAuthSessionRepositoryTest {
         override val status: Flow<AuthSessionStatus> = statusState.asStateFlow()
 
         var markRefreshSucceededCalls: Int = 0
+        var clearSessionCalls: Int = 0
         val markReauthRequiredReasons = mutableListOf<AuthErrorCode>()
 
         override suspend fun markSessionEstablished() {
@@ -114,6 +156,11 @@ class DefaultAuthSessionRepositoryTest {
                 reauthReason = null,
                 reauthDetectedAtEpochMillis = null,
             )
+        }
+
+        override suspend fun clearSession() {
+            clearSessionCalls += 1
+            statusState.value = AuthSessionStatus()
         }
 
         override suspend fun markReauthRequired(reason: AuthErrorCode, detectedAtEpochMillis: Long) {
