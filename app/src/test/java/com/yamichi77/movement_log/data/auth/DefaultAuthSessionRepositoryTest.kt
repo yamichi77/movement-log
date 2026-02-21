@@ -84,6 +84,29 @@ class DefaultAuthSessionRepositoryTest {
     }
 
     @Test
+    fun refreshAccessToken_sendsBearerToken_whenTokenExists() = runTest {
+        val authApi = FakeBffAuthApi(
+            refreshResult = RefreshAccessTokenResult(
+                accessToken = "new-token",
+                sessionRotated = false,
+            ),
+        )
+        val statusRepository = FakeAuthSessionStatusRepository()
+        val cookieStore = FakeAuthCookieStore()
+        val repository = DefaultAuthSessionRepository(
+            authApi = authApi,
+            sessionStore = AuthSessionStore(),
+            sessionStatusRepository = statusRepository,
+            authCookieStore = cookieStore,
+        )
+        repository.setAccessToken("active-token")
+
+        repository.refreshAccessToken("https://example.invalid")
+
+        assertEquals("active-token", authApi.lastRefreshAccessToken)
+    }
+
+    @Test
     fun logout_clearsLocalSessionState() = runTest {
         val authApi = FakeBffAuthApi()
         val statusRepository = FakeAuthSessionStatusRepository()
@@ -111,10 +134,15 @@ class DefaultAuthSessionRepositoryTest {
     ) : BffAuthApi {
         var refreshCalls: Int = 0
         var logoutCalls: Int = 0
+        var lastRefreshAccessToken: String? = null
         var lastLogoutAccessToken: String? = null
 
-        override suspend fun refreshAccessToken(baseUrl: String): RefreshAccessTokenResult {
+        override suspend fun refreshAccessToken(
+            baseUrl: String,
+            accessToken: String?,
+        ): RefreshAccessTokenResult {
             refreshCalls += 1
+            lastRefreshAccessToken = accessToken
             refreshError?.let { throw it }
             return refreshResult ?: RefreshAccessTokenResult(
                 accessToken = "token",

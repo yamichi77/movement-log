@@ -16,16 +16,22 @@ class HttpBffAuthApi(
     private val client: OkHttpClient,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) : BffAuthApi {
-    override suspend fun refreshAccessToken(baseUrl: String): RefreshAccessTokenResult =
+    override suspend fun refreshAccessToken(
+        baseUrl: String,
+        accessToken: String?,
+    ): RefreshAccessTokenResult =
         withContext(Dispatchers.IO) {
             val base = parseBaseUrl(baseUrl)
             val url = base.newBuilder()
                 .addEncodedPathSegments("api/auth/token/refresh")
                 .build()
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url(url)
                 .post("{}".toRequestBody(JsonMediaType))
-                .build()
+            accessToken?.trim()?.takeIf { it.isNotBlank() }?.let { token ->
+                requestBuilder.header("Authorization", "Bearer $token")
+            }
+            val request = requestBuilder.build()
 
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()

@@ -62,7 +62,10 @@ class DefaultAuthSessionRepository(
 
         while (true) {
             try {
-                val result = authApi.refreshAccessToken(baseUrl)
+                val result = authApi.refreshAccessToken(
+                    baseUrl = baseUrl,
+                    accessToken = accessToken.value,
+                )
                 sessionStore.setAccessToken(result.accessToken)
                 runCatching { sessionStatusRepository.markRefreshSucceeded() }
                 return result
