@@ -6,7 +6,7 @@ data class RefreshAccessTokenResult(
 )
 
 interface BffAuthApi {
-    suspend fun refreshAccessToken(baseUrl: String): RefreshAccessTokenResult
+    suspend fun refreshAccessToken(baseUrl: String, accessToken: String?): RefreshAccessTokenResult
 
     suspend fun logout(baseUrl: String, accessToken: String?)
 }
