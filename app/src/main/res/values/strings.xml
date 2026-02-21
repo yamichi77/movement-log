@@ -1,3 +1,93 @@
 <resources>
     <string name="app_name">movement-log</string>
+
+    <string name="notification_channel_name">移動ログ記録</string>
+    <string name="notification_title">移動ログを記録中</string>
+    <string name="notification_text">位置情報の移動ログを取得しています</string>
+
+    <string name="permission_title">権限の設定</string>
+    <string name="permission_description">移動ログ記録には以下の権限が必要です。</string>
+    <string name="permission_request">権限をリクエストする</string>
+    <string name="permission_granted">許可済み</string>
+    <string name="permission_not_granted">未許可</string>
+    <string name="permission_fine_location">位置情報（高精度）</string>
+    <string name="permission_coarse_location">位置情報（おおまか）</string>
+    <string name="permission_activity_recognition">身体活動</string>
+    <string name="permission_notifications">通知</string>
+
+    <string name="menu_home">ホーム</string>
+    <string name="menu_history_map">履歴マップ</string>
+    <string name="menu_log_table">ログ一覧</string>
+    <string name="menu_connection_settings">接続設定</string>
+
+    <string name="home_status_collecting">収集中</string>
+    <string name="home_status_stopped">停止中</string>
+    <string name="home_activity_status">活動状態: %1$s</string>
+    <string name="home_overview_subtitle">収集状態と最新の位置情報を確認できます</string>
+    <string name="home_latest_location">最新位置</string>
+    <string name="home_latitude">緯度: %1$s</string>
+    <string name="home_longitude">経度: %1$s</string>
+    <string name="home_last_updated">最終更新: %1$s</string>
+    <string name="home_log_count">ログ件数: %1$d件</string>
+    <string name="home_unknown_value">--</string>
+    <string name="home_not_recorded">未記録</string>
+    <string name="home_map_placeholder">地図プレビュー（準備中）</string>
+    <string name="home_start_collecting">収集開始</string>
+    <string name="home_stop_collecting">収集停止</string>
+
+    <string name="history_map_title">履歴マップ</string>
+    <string name="history_map_subtitle">記録済みの位置情報から移動軌跡を表示します</string>
+    <string name="history_map_stats_title">統計情報</string>
+    <string name="history_map_last_point">最新地点: %1$s</string>
+    <string name="history_map_log_count">ログ件数: %1$d件</string>
+    <string name="history_map_last_updated">最終更新: %1$s</string>
+    <string name="history_map_last_point_label">最新地点</string>
+    <string name="history_map_empty_title">まだ移動履歴がありません</string>
+    <string name="history_map_empty_detail">位置情報が記録されると、ここに軌跡を表示します。</string>
+    <string name="history_map_map_unavailable">地図を表示できません</string>
+    <string name="history_map_api_key_hint">MAPS_API_KEY を local.properties に設定してください</string>
+
+    <string name="log_table_title">ログ一覧</string>
+    <string name="log_table_subtitle">最新50件を時系列で表示します</string>
+    <string name="log_table_display_count">表示件数: %1$d件</string>
+    <string name="log_table_total_count">総件数: %1$d件</string>
+    <string name="log_table_empty">ログデータがありません</string>
+    <string name="log_table_header_time">時刻</string>
+    <string name="log_table_header_latitude">緯度</string>
+    <string name="log_table_header_longitude">経度</string>
+    <string name="log_table_header_activity">活動</string>
+    <string name="log_table_row_content_description">時刻 %1$s、緯度 %2$s、経度 %3$s、活動 %4$s</string>
+
+    <string name="connection_settings_title">接続設定</string>
+    <string name="connection_settings_description">BFF の接続先とアップロードパスを設定します</string>
+    <string name="connection_settings_base_url">BFF Base URL</string>
+    <string name="connection_settings_upload_path">Upload Path</string>
+    <string name="connection_settings_connectivity_test">接続テスト</string>
+    <string name="connection_settings_connectivity_testing">接続テスト中...</string>
+    <string name="connection_settings_connectivity_success">接続テスト成功</string>
+    <string name="connection_settings_connectivity_success_rotated">接続テスト成功（セッション更新あり）</string>
+    <string name="connection_settings_connectivity_failed">接続テスト失敗</string>
+    <string name="connection_settings_error_required">必須項目です</string>
+    <string name="connection_settings_error_invalid_base_url">Base URL の形式が不正です</string>
+    <string name="connection_settings_error_invalid_upload_path">Upload Path は / で始めてください</string>
+    <string name="connection_settings_save">保存</string>
+    <string name="connection_settings_save_success">接続設定を保存しました</string>
+    <string name="connection_settings_save_failed">接続設定の保存に失敗しました</string>
+    <string name="connection_settings_send_status_title">送信状況</string>
+    <string name="connection_settings_send_status_initial">最新送信: 未実行</string>
+
+    <string name="activity_status_still">停止中</string>
+    <string name="activity_status_walking">歩行中</string>
+
+    <string name="tracking_frequency_section_title">取得頻度設定</string>
+    <string name="tracking_frequency_section_description">活動ごとの位置取得間隔（秒）を設定します</string>
+    <string name="tracking_frequency_walking_label">歩行中</string>
+    <string name="tracking_frequency_running_label">走行中</string>
+    <string name="tracking_frequency_bicycle_label">自転車</string>
+    <string name="tracking_frequency_vehicle_label">乗り物</string>
+    <string name="tracking_frequency_still_label">停止中</string>
+    <string name="tracking_frequency_unit_seconds">秒</string>
+    <string name="tracking_frequency_label_with_unit">%1$s (%2$s)</string>
+    <string name="tracking_frequency_error_number">数値を入力してください</string>
+    <string name="tracking_frequency_error_range">5〜3600秒の範囲で入力してください</string>
 </resources>
