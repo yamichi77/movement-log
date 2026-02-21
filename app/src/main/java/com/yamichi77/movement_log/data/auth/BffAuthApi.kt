@@ -8,7 +8,7 @@ data class RefreshAccessTokenResult(
 interface BffAuthApi {
     suspend fun refreshAccessToken(baseUrl: String): RefreshAccessTokenResult
 
-    suspend fun logout(baseUrl: String)
+    suspend fun logout(baseUrl: String, accessToken: String?)
 }
 
 class ReauthRequiredException(

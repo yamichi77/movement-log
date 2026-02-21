@@ -15,6 +15,7 @@ import com.yamichi77.movement_log.data.settings.ConnectionSettingsStore
 import com.yamichi77.movement_log.data.sync.AuthKeepAliveScheduler
 import com.yamichi77.movement_log.data.sync.AuthKeepAliveSchedulerProvider
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 class AndroidConnectionSettingsRepository(
     appContext: Context,
@@ -70,5 +71,11 @@ class AndroidConnectionSettingsRepository(
             authKeepAliveScheduler.start()
             ConnectivityTestResult(sessionRotated = refreshResult.sessionRotated)
         }
+    }
+
+    override suspend fun logout() {
+        val baseUrl = settings.first().baseUrl
+        authSessionRepository.logout(baseUrl)
+        authKeepAliveScheduler.stop()
     }
 }

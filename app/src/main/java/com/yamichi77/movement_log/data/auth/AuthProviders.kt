@@ -74,6 +74,7 @@ object AuthSessionRepositoryProvider {
                 sessionStatusRepository = AuthSessionStatusRepositoryProvider.get(
                     context.applicationContext,
                 ),
+                authCookieStore = PersistentCookieJarProvider.getStore(context.applicationContext),
             ).also { instance = it }
         }
 

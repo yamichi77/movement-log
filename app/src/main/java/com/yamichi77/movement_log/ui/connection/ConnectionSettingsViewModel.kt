@@ -56,6 +56,12 @@ class ConnectionSettingsViewModel(
     private val saveFailedText: String = runCatching {
         application.getString(R.string.connection_settings_save_failed)
     }.getOrDefault("Failed to save settings")
+    private val logoutSuccessText: String = runCatching {
+        application.getString(R.string.connection_settings_logout_success)
+    }.getOrDefault("Logged out")
+    private val logoutFailedText: String = runCatching {
+        application.getString(R.string.connection_settings_logout_failed)
+    }.getOrDefault("Failed to logout")
     private val intervalNumberOnlyText: String = runCatching {
         application.getString(R.string.tracking_frequency_error_number)
     }.getOrDefault("Enter a number")
@@ -120,6 +126,8 @@ class ConnectionSettingsViewModel(
                 connectivityResult = ConnectionSettingsUiState.ConnectivityResult.None,
                 connectivityMessage = null,
                 saveResult = ConnectionSettingsUiState.SaveResult.None,
+                logoutResult = ConnectionSettingsUiState.LogoutResult.None,
+                logoutMessage = null,
             )
         }
     }
@@ -132,6 +140,8 @@ class ConnectionSettingsViewModel(
                 connectivityResult = ConnectionSettingsUiState.ConnectivityResult.None,
                 connectivityMessage = null,
                 saveResult = ConnectionSettingsUiState.SaveResult.None,
+                logoutResult = ConnectionSettingsUiState.LogoutResult.None,
+                logoutMessage = null,
             )
         }
     }
@@ -206,6 +216,8 @@ class ConnectionSettingsViewModel(
                     isTestingConnectivity = true,
                     connectivityResult = ConnectionSettingsUiState.ConnectivityResult.None,
                     connectivityMessage = null,
+                    logoutResult = ConnectionSettingsUiState.LogoutResult.None,
+                    logoutMessage = null,
                 )
             }
 
@@ -263,6 +275,8 @@ class ConnectionSettingsViewModel(
                 it.copy(
                     isSaving = true,
                     saveResult = ConnectionSettingsUiState.SaveResult.None,
+                    logoutResult = ConnectionSettingsUiState.LogoutResult.None,
+                    logoutMessage = null,
                 )
             }
 
@@ -294,6 +308,41 @@ class ConnectionSettingsViewModel(
         }
     }
 
+    fun onLogoutClick() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoggingOut = true,
+                    logoutResult = ConnectionSettingsUiState.LogoutResult.None,
+                    logoutMessage = null,
+                    saveResult = ConnectionSettingsUiState.SaveResult.None,
+                    connectivityResult = ConnectionSettingsUiState.ConnectivityResult.None,
+                    connectivityMessage = null,
+                )
+            }
+
+            runCatching {
+                repository.logout()
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isLoggingOut = false,
+                        logoutResult = ConnectionSettingsUiState.LogoutResult.Success,
+                        logoutMessage = logoutSuccessText,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isLoggingOut = false,
+                        logoutResult = ConnectionSettingsUiState.LogoutResult.Error,
+                        logoutMessage = buildLogoutFailureMessage(error),
+                    )
+                }
+            }
+        }
+    }
+
     private fun onConnectivitySuccess(result: ConnectivityTestResult) {
         _uiState.update {
             it.copy(
@@ -315,6 +364,15 @@ class ConnectionSettingsViewModel(
             connectivityFailedText
         } else {
             "$connectivityFailedText: $message"
+        }
+    }
+
+    private fun buildLogoutFailureMessage(error: Throwable): String {
+        val message = error.message?.takeIf { it.isNotBlank() }
+        return if (message == null) {
+            logoutFailedText
+        } else {
+            "$logoutFailedText: $message"
         }
     }
 

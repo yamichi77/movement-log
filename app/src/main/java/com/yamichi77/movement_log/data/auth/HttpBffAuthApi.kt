@@ -42,15 +42,18 @@ class HttpBffAuthApi(
             }
         }
 
-    override suspend fun logout(baseUrl: String) = withContext(Dispatchers.IO) {
+    override suspend fun logout(baseUrl: String, accessToken: String?) = withContext(Dispatchers.IO) {
         val base = parseBaseUrl(baseUrl)
         val url = base.newBuilder()
             .addEncodedPathSegments("api/auth/logout")
             .build()
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .post("{}".toRequestBody(JsonMediaType))
-            .build()
+        accessToken?.trim()?.takeIf { it.isNotBlank() }?.let { token ->
+            requestBuilder.header("Authorization", "Bearer $token")
+        }
+        val request = requestBuilder.build()
 
         client.newCall(request).execute().use { response ->
             if (response.code != 204 && !response.isSuccessful) {

@@ -264,10 +264,64 @@ class ConnectionSettingsViewModelTest {
         assertEquals(1, fakeFrequencyRepository.saveCallCount)
     }
 
+    @Test
+    fun onLogoutClick_callsRepositoryAndUpdatesSuccessResult() = runTest {
+        val fakeRepository = FakeConnectionSettingsRepository(initial = ConnectionSettings.Default)
+        val fakeFrequencyRepository = FakeTrackingFrequencySettingsRepository(
+            initial = TrackingFrequencySettings.Default,
+        )
+        val viewModel = ConnectionSettingsViewModel(
+            application = Application(),
+            repository = fakeRepository,
+            trackingFrequencySettingsRepository = fakeFrequencyRepository,
+        )
+
+        advanceUntilIdle()
+        viewModel.onLogoutClick()
+
+        advanceUntilIdle()
+
+        assertEquals(1, fakeRepository.logoutCallCount)
+        assertEquals(
+            ConnectionSettingsUiState.LogoutResult.Success,
+            viewModel.uiState.value.logoutResult,
+        )
+        assertFalse(viewModel.uiState.value.isLoggingOut)
+    }
+
+    @Test
+    fun onLogoutClick_whenRepositoryThrows_updatesErrorResult() = runTest {
+        val fakeRepository = FakeConnectionSettingsRepository(
+            initial = ConnectionSettings.Default,
+            shouldFailOnLogout = true,
+        )
+        val fakeFrequencyRepository = FakeTrackingFrequencySettingsRepository(
+            initial = TrackingFrequencySettings.Default,
+        )
+        val viewModel = ConnectionSettingsViewModel(
+            application = Application(),
+            repository = fakeRepository,
+            trackingFrequencySettingsRepository = fakeFrequencyRepository,
+        )
+
+        advanceUntilIdle()
+        viewModel.onLogoutClick()
+
+        advanceUntilIdle()
+
+        assertEquals(1, fakeRepository.logoutCallCount)
+        assertEquals(
+            ConnectionSettingsUiState.LogoutResult.Error,
+            viewModel.uiState.value.logoutResult,
+        )
+        assertFalse(viewModel.uiState.value.isLoggingOut)
+    }
+
     private class FakeConnectionSettingsRepository(
         initial: ConnectionSettings,
         initialSendStatus: String = "",
         private val shouldFailOnSave: Boolean = false,
+        private val shouldFailOnLogout: Boolean = false,
         private val connectivityResult: ConnectivityTestResult = ConnectivityTestResult(
             sessionRotated = false,
         ),
@@ -282,6 +336,7 @@ class ConnectionSettingsViewModelTest {
         var lastSaved: ConnectionSettings? = null
         var saveCallCount: Int = 0
         var connectivityTestCallCount: Int = 0
+        var logoutCallCount: Int = 0
 
         override suspend fun save(settings: ConnectionSettings) {
             saveCallCount += 1
@@ -301,6 +356,13 @@ class ConnectionSettingsViewModelTest {
             connectivityError?.let { throw it }
             settingsState.value = settings
             return connectivityResult
+        }
+
+        override suspend fun logout() {
+            logoutCallCount += 1
+            if (shouldFailOnLogout) {
+                throw IllegalStateException("logout failed for test")
+            }
         }
     }
 

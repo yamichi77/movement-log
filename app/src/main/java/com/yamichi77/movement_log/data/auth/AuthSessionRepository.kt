@@ -12,6 +12,8 @@ interface AuthSessionRepository {
 
     suspend fun refreshAccessToken(baseUrl: String): RefreshAccessTokenResult
 
+    suspend fun logout(baseUrl: String)
+
     fun setAccessToken(token: String?)
 }
 
@@ -19,6 +21,7 @@ class DefaultAuthSessionRepository(
     private val authApi: BffAuthApi,
     private val sessionStore: AuthSessionStore,
     private val sessionStatusRepository: AuthSessionStatusRepository,
+    private val authCookieStore: AuthCookieStore,
 ) : AuthSessionRepository {
     override val accessToken: StateFlow<String?> = sessionStore.accessToken
 
@@ -36,6 +39,21 @@ class DefaultAuthSessionRepository(
 
     override fun setAccessToken(token: String?) {
         sessionStore.setAccessToken(token)
+    }
+
+    override suspend fun logout(baseUrl: String) {
+        refreshMutex.withLock {
+            val normalizedBaseUrl = baseUrl.trim()
+            runCatching {
+                if (normalizedBaseUrl.isNotBlank()) {
+                    authApi.logout(normalizedBaseUrl, accessToken.value)
+                }
+            }
+            sessionStore.setAccessToken(null)
+            authCookieStore.clear()
+            runCatching { sessionStatusRepository.clearSession() }
+            AuthNavigationEventBus.clear()
+        }
     }
 
     private suspend fun refreshWithPolicies(baseUrl: String): RefreshAccessTokenResult {

@@ -20,11 +20,15 @@ import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import java.io.IOException
 
+interface AuthCookieStore {
+    fun clear()
+}
+
 private val Context.authCookieDataStore by preferencesDataStore(name = "auth_cookie_store")
 
 class PersistentCookieJar(
     private val appContext: Context,
-) : CookieJar {
+) : CookieJar, AuthCookieStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
@@ -111,6 +115,13 @@ class PersistentCookieJar(
                 preferences[CookieJsonKey] = json.encodeToString(snapshot)
             }
         }
+    }
+
+    override fun clear() {
+        synchronized(lock) {
+            cookiesByKey.clear()
+        }
+        persistAsync()
     }
 
     private fun cookieKey(cookie: Cookie): String = buildString {

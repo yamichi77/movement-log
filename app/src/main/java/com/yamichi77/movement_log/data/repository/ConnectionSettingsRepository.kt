@@ -16,4 +16,6 @@ interface ConnectionSettingsRepository {
     suspend fun saveSendStatusText(text: String)
 
     suspend fun testConnectivity(settings: ConnectionSettings): ConnectivityTestResult
+
+    suspend fun logout()
 }

@@ -203,6 +203,8 @@ class AuthKeepAliveUseCaseTest {
 
         override suspend fun testConnectivity(settings: ConnectionSettings): ConnectivityTestResult =
             ConnectivityTestResult(sessionRotated = false)
+
+        override suspend fun logout() = Unit
     }
 
     private class FakeAuthSessionRepository : AuthSessionRepository {
@@ -225,6 +227,10 @@ class AuthKeepAliveUseCaseTest {
 
         override fun setAccessToken(token: String?) {
             tokenState.value = token
+        }
+
+        override suspend fun logout(baseUrl: String) {
+            tokenState.value = null
         }
     }
 
@@ -252,6 +258,10 @@ class AuthKeepAliveUseCaseTest {
                 reauthReason = null,
                 reauthDetectedAtEpochMillis = null,
             )
+        }
+
+        override suspend fun clearSession() {
+            statusState.value = AuthSessionStatus()
         }
 
         override suspend fun markReauthRequired(reason: AuthErrorCode, detectedAtEpochMillis: Long) {

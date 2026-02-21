@@ -32,6 +32,10 @@ class WorkManagerAuthKeepAliveScheduler(
         )
     }
 
+    override fun stop() {
+        workManager.cancelUniqueWork(UniqueWorkName)
+    }
+
     companion object {
         const val UniqueWorkName = "movement-log-auth-keepalive-worker"
         const val WorkerTag = "movement-log-auth-keepalive-tag"

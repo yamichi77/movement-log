@@ -73,6 +73,10 @@
     <string name="connection_settings_save">保存</string>
     <string name="connection_settings_save_success">接続設定を保存しました</string>
     <string name="connection_settings_save_failed">接続設定の保存に失敗しました</string>
+    <string name="connection_settings_logout">ログアウト</string>
+    <string name="connection_settings_logging_out">ログアウト中...</string>
+    <string name="connection_settings_logout_success">ログアウトしました</string>
+    <string name="connection_settings_logout_failed">ログアウトに失敗しました</string>
     <string name="connection_settings_send_status_title">送信状況</string>
     <string name="connection_settings_send_status_initial">最新送信: 未実行</string>
 

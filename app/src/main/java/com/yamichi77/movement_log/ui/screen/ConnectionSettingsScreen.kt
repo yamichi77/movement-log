@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.NetworkCheck
@@ -63,6 +64,7 @@ fun ConnectionSettingsScreen(
         onStillIntervalChanged = viewModel::onStillIntervalChanged,
         onConnectivityTest = viewModel::onConnectivityTestClick,
         onSave = viewModel::onSaveClick,
+        onLogout = viewModel::onLogoutClick,
     )
 }
 
@@ -78,6 +80,7 @@ private fun ConnectionSettingsScreenContent(
     onStillIntervalChanged: (String) -> Unit,
     onConnectivityTest: () -> Unit,
     onSave: () -> Unit,
+    onLogout: () -> Unit,
 ) {
     var isConnectionExpanded by rememberSaveable { mutableStateOf(false) }
     var isTrackingFrequencyExpanded by rememberSaveable { mutableStateOf(false) }
@@ -125,7 +128,7 @@ private fun ConnectionSettingsScreenContent(
             )
             OutlinedButton(
                 onClick = onConnectivityTest,
-                enabled = !uiState.isTestingConnectivity && !uiState.isSaving,
+                enabled = !uiState.isTestingConnectivity && !uiState.isSaving && !uiState.isLoggingOut,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(imageVector = Icons.Default.NetworkCheck, contentDescription = null)
@@ -215,7 +218,7 @@ private fun ConnectionSettingsScreenContent(
 
         Button(
             onClick = onSave,
-            enabled = !uiState.isSaving && !uiState.isTestingConnectivity,
+            enabled = !uiState.isSaving && !uiState.isTestingConnectivity && !uiState.isLoggingOut,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(imageVector = Icons.Default.Save, contentDescription = null)
@@ -235,6 +238,42 @@ private fun ConnectionSettingsScreenContent(
             ConnectionSettingsUiState.SaveResult.Error -> {
                 Text(
                     text = stringResource(R.string.connection_settings_save_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
+        OutlinedButton(
+            onClick = onLogout,
+            enabled = !uiState.isLoggingOut && !uiState.isSaving && !uiState.isTestingConnectivity,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(imageVector = Icons.AutoMirrored.Filled.Logout, contentDescription = null)
+            Spacer(modifier = Modifier.width(Spacing.xs))
+            Text(
+                if (uiState.isLoggingOut) {
+                    stringResource(R.string.connection_settings_logging_out)
+                } else {
+                    stringResource(R.string.connection_settings_logout)
+                },
+            )
+        }
+
+        when (uiState.logoutResult) {
+            ConnectionSettingsUiState.LogoutResult.None -> Unit
+            ConnectionSettingsUiState.LogoutResult.Success -> {
+                Text(
+                    text = uiState.logoutMessage
+                        ?: stringResource(R.string.connection_settings_logout_success),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            ConnectionSettingsUiState.LogoutResult.Error -> {
+                Text(
+                    text = uiState.logoutMessage
+                        ?: stringResource(R.string.connection_settings_logout_failed),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -367,6 +406,7 @@ private fun ConnectionSettingsScreenPreview() {
             onStillIntervalChanged = {},
             onConnectivityTest = {},
             onSave = {},
+            onLogout = {},
         )
     }
 }
