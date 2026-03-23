@@ -3,6 +3,7 @@ package com.yamichi77.movement_log.data.sync
 import com.yamichi77.movement_log.data.auth.AuthSessionRepository
 import com.yamichi77.movement_log.data.auth.RefreshAccessTokenResult
 import com.yamichi77.movement_log.data.auth.UnauthorizedApiException
+import com.yamichi77.movement_log.data.network.DuplicateMovementLogException
 import com.yamichi77.movement_log.data.network.MovementApiException
 import com.yamichi77.movement_log.data.network.MovementApiGateway
 import com.yamichi77.movement_log.data.network.MovementLogUploadRequest
@@ -152,6 +153,44 @@ class SyncMovementLogsUseCaseTest {
         assertTrue(uploadRepository.markedUploadedIds.isEmpty())
     }
 
+    @Test
+    fun sync_marksUploaded_whenUploadIsConflict() = runTest {
+        val settingsRepository = FakeConnectionSettingsRepository(
+            ConnectionSettings(
+                baseUrl = "https://example.invalid",
+                uploadPath = "/api/movelog",
+            ),
+        )
+        val uploadRepository = FakeMovementLogUploadRepository(
+            listOf(
+                PendingUploadLog(
+                    id = 11,
+                    recordedAtEpochMillis = 1_700_000_000_000L,
+                    latitude = 35.0,
+                    longitude = 139.0,
+                    accuracy = 3.0f,
+                    activityStatus = "WALKING",
+                ),
+            ),
+        )
+        val gateway = FakeMovementApiGateway().apply {
+            uploadErrors += DuplicateMovementLogException("duplicate")
+        }
+        val authSessionRepository = FakeAuthSessionRepository(initialToken = "valid-token")
+        val useCase = SyncMovementLogsUseCase(
+            connectionSettingsRepository = settingsRepository,
+            movementLogUploadRepository = uploadRepository,
+            movementApiGateway = gateway,
+            authSessionRepository = authSessionRepository,
+        )
+
+        val result = useCase.sync()
+
+        assertTrue(result is SyncMovementLogsResult.Success)
+        assertEquals(listOf(11L), uploadRepository.markedUploadedIds)
+        assertEquals(1, gateway.uploadAttemptCount)
+    }
+
     private class FakeConnectionSettingsRepository(
         initialSettings: ConnectionSettings,
     ) : ConnectionSettingsRepository {
@@ -195,6 +234,7 @@ class SyncMovementLogsUseCaseTest {
     private class FakeMovementApiGateway : MovementApiGateway {
         var unauthorizedOnce: Boolean = false
         var uploadError: Throwable? = null
+        val uploadErrors = mutableListOf<Throwable>()
         var uploadAttemptCount: Int = 0
         val uploadCalls = mutableListOf<MovementLogUploadRequest>()
 
@@ -210,6 +250,9 @@ class SyncMovementLogsUseCaseTest {
             if (unauthorizedOnce) {
                 unauthorizedOnce = false
                 throw UnauthorizedApiException("unauthorized")
+            }
+            if (uploadErrors.isNotEmpty()) {
+                throw uploadErrors.removeAt(0)
             }
             uploadError?.let { throw it }
             uploadCalls += request

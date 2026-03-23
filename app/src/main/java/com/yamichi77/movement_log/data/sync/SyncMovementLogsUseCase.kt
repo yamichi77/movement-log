@@ -3,6 +3,7 @@ package com.yamichi77.movement_log.data.sync
 import com.yamichi77.movement_log.data.auth.AuthSessionRepository
 import com.yamichi77.movement_log.data.auth.RefreshTemporaryFailureException
 import com.yamichi77.movement_log.data.auth.UnauthorizedApiException
+import com.yamichi77.movement_log.data.network.DuplicateMovementLogException
 import com.yamichi77.movement_log.data.network.MovementApiException
 import com.yamichi77.movement_log.data.network.MovementApiGateway
 import com.yamichi77.movement_log.data.network.MovementLogUploadRequest
@@ -42,15 +43,19 @@ class SyncMovementLogsUseCase(
             return SyncMovementLogsResult.Success(0)
         }
 
+        val uploadedIds = mutableListOf<Long>()
         return try {
             var token = authSessionRepository.getOrRefreshAccessToken(settings.baseUrl)
-            val uploadedIds = mutableListOf<Long>()
             pendingLogs.forEach { log ->
-                token = uploadWithRefresh(
-                    settings = settings,
-                    token = token,
-                    request = log.toUploadRequest(),
-                )
+                try {
+                    token = uploadWithRefresh(
+                        settings = settings,
+                        token = token,
+                        request = log.toUploadRequest(),
+                    )
+                } catch (_: DuplicateMovementLogException) {
+                    // 既存データとの重複は送信済みとして扱う。
+                }
                 uploadedIds += log.id
             }
             movementLogUploadRepository.markUploaded(uploadedIds)
@@ -59,6 +64,7 @@ class SyncMovementLogsUseCase(
             )
             SyncMovementLogsResult.Success(uploadedIds.size)
         } catch (error: Throwable) {
+            movementLogUploadRepository.markUploaded(uploadedIds)
             val detail = error.message ?: error::class.simpleName.orEmpty()
             connectionSettingsRepository.saveSendStatusText(
                 formatStatus(now, "失敗", detail),

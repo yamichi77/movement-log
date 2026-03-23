@@ -39,6 +39,7 @@ class WorkManagerAuthKeepAliveScheduler(
     companion object {
         const val UniqueWorkName = "movement-log-auth-keepalive-worker"
         const val WorkerTag = "movement-log-auth-keepalive-tag"
-        private const val RepeatIntervalHours = 6L
+        // Keep refresh cadence comfortably below server sessions that may expire within a few hours.
+        private const val RepeatIntervalHours = 1L
     }
 }
