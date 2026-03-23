@@ -355,5 +355,7 @@ class MovementlogAppUiTest {
             settingsState.value = settings
             return ConnectivityTestResult(sessionRotated = true)
         }
+
+        override suspend fun logout() = Unit
     }
 }

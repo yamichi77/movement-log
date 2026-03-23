@@ -59,6 +59,9 @@ class HttpMovementApiGateway(
             if (response.code == 401) {
                 throw UnauthorizedApiException("upload failed: unauthorized")
             }
+            if (response.code == 409) {
+                throw DuplicateMovementLogException("upload failed: duplicate")
+            }
             if (!response.isSuccessful) {
                 throw MovementApiException("upload failed: code=${response.code}")
             }

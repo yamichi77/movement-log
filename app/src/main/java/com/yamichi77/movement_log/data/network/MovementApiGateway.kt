@@ -26,3 +26,8 @@ class MovementApiException(
     message: String,
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)
+
+class DuplicateMovementLogException(
+    message: String,
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)

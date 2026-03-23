@@ -83,4 +83,22 @@ class HttpMovementApiGatewayTest {
             ),
         )
     }
+
+    @Test(expected = DuplicateMovementLogException::class)
+    fun uploadMovementLog_throwsWhenConflict() = runTest {
+        server.enqueue(MockResponse().setResponseCode(409))
+
+        gateway.uploadMovementLog(
+            baseUrl = server.url("/").toString(),
+            uploadPath = "/api/movelog",
+            token = "valid-token",
+            request = MovementLogUploadRequest(
+                seqTime = "20260216235959",
+                latitude = 35.0,
+                longitude = 139.0,
+                accuracy = 4.5,
+                activity = "WALKING",
+            ),
+        )
+    }
 }
