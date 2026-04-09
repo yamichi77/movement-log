@@ -18,7 +18,7 @@ data class AuthCallbackPayload(
 }
 
 class AuthCallbackLoginCompleter(
-    private val authApi: BffAuthApi,
+    private val authClient: OidcAuthClient,
     private val sessionStore: AuthSessionStore,
     private val sessionStatusRepository: AuthSessionStatusRepository,
 ) {
@@ -26,11 +26,18 @@ class AuthCallbackLoginCompleter(
         val result = when {
             payload.canCompleteWithApi -> completeViaApi(baseUrl, payload)
             payload.hasDirectAccessToken -> {
+                val directToken = payload.accessToken.orEmpty()
+                sessionStore.replaceSession(
+                    StoredAuthSession(
+                        accessToken = directToken,
+                    ),
+                )
                 RefreshAccessTokenResult(
-                    accessToken = payload.accessToken.orEmpty(),
+                    accessToken = directToken,
                     sessionRotated = false,
                 )
             }
+
             else -> {
                 throw AuthApiException("auth callback missing usable data")
             }
@@ -44,28 +51,17 @@ class AuthCallbackLoginCompleter(
         baseUrl: String,
         payload: AuthCallbackPayload,
     ): RefreshAccessTokenResult {
-        val state = payload.state?.trim()?.takeIf { it.isNotBlank() }
-            ?: throw AuthApiException("auth callback missing state")
         if (payload.code.isNullOrBlank() && !payload.error.isNullOrBlank()) {
             val detail = payload.errorDescription?.takeIf { it.isNotBlank() } ?: payload.error
             throw AuthApiException("auth callback failed: $detail")
         }
-
-        val completion = authApi.completeLogin(
-            baseUrl = baseUrl,
-            state = state,
-            code = payload.code?.trim()?.takeIf { it.isNotBlank() },
-            error = payload.error?.trim()?.takeIf { it.isNotBlank() },
-            errorDescription = payload.errorDescription?.trim()?.takeIf { it.isNotBlank() },
+        return authClient.completeAuthorization(
+            OidcAuthorizationCallback(
+                state = payload.state,
+                code = payload.code,
+                error = payload.error,
+                errorDescription = payload.errorDescription,
+            ),
         )
-        val callbackToken = completion.accessToken?.trim()?.takeIf { it.isNotBlank() }
-        return if (callbackToken != null) {
-            RefreshAccessTokenResult(
-                accessToken = callbackToken,
-                sessionRotated = completion.sessionRotated,
-            )
-        } else {
-            authApi.refreshAccessToken(baseUrl = baseUrl, accessToken = null)
-        }
     }
 }

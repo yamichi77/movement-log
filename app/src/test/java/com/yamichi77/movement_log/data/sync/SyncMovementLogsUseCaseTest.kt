@@ -348,6 +348,10 @@ class SyncMovementLogsUseCaseTest {
             tokenState.value = token
         }
 
+        override fun clearTokens() {
+            tokenState.value = null
+        }
+
         override suspend fun logout(baseUrl: String) {
             tokenState.value = null
         }

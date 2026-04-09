@@ -19,19 +19,17 @@ class DefaultAuthSessionRepositoryTest {
 
     @Test
     fun refreshAccessToken_marksRefreshSucceeded_whenApiSucceeds() = runTest {
-        val authApi = FakeBffAuthApi(
+        val authClient = FakeOidcAuthClient(
             refreshResult = RefreshAccessTokenResult(
                 accessToken = "refreshed-token",
                 sessionRotated = false,
             ),
         )
         val statusRepository = FakeAuthSessionStatusRepository()
-        val cookieStore = FakeAuthCookieStore()
         val repository = DefaultAuthSessionRepository(
-            authApi = authApi,
+            authClient = authClient,
             sessionStore = AuthSessionStore(),
             sessionStatusRepository = statusRepository,
-            authCookieStore = cookieStore,
         )
 
         repository.refreshAccessToken("https://portal.yamichi.com")
@@ -42,19 +40,17 @@ class DefaultAuthSessionRepositoryTest {
     @Test
     fun refreshAccessToken_marksReauthRequired_whenApiRequiresReauth() = runTest {
         val baseUrl = "https://portal.yamichi.com"
-        val authApi = FakeBffAuthApi(
+        val authClient = FakeOidcAuthClient(
             refreshError = ReauthRequiredException(
                 AuthErrorCode.SESSION_EXPIRED,
                 "expired",
             ),
         )
         val statusRepository = FakeAuthSessionStatusRepository()
-        val cookieStore = FakeAuthCookieStore()
         val repository = DefaultAuthSessionRepository(
-            authApi = authApi,
+            authClient = authClient,
             sessionStore = AuthSessionStore(),
             sessionStatusRepository = statusRepository,
-            authCookieStore = cookieStore,
         )
 
         runCatching { repository.refreshAccessToken(baseUrl) }
@@ -68,21 +64,19 @@ class DefaultAuthSessionRepositoryTest {
     @Test
     fun refreshAccessToken_retriesThenMarksSessionInvalid_whenSessionInvalidContinues() = runTest {
         val baseUrl = "https://portal.yamichi.com"
-        val authApi = FakeBffAuthApi(
+        val authClient = FakeOidcAuthClient(
             refreshError = SessionInvalidException("invalid"),
         )
         val statusRepository = FakeAuthSessionStatusRepository()
-        val cookieStore = FakeAuthCookieStore()
         val repository = DefaultAuthSessionRepository(
-            authApi = authApi,
+            authClient = authClient,
             sessionStore = AuthSessionStore(),
             sessionStatusRepository = statusRepository,
-            authCookieStore = cookieStore,
         )
 
         runCatching { repository.refreshAccessToken(baseUrl) }
 
-        assertEquals(2, authApi.refreshCalls)
+        assertEquals(2, authClient.refreshCalls)
         assertEquals(listOf(AuthErrorCode.SESSION_INVALID), statusRepository.markReauthRequiredReasons)
         val event = AuthNavigationEventBus.event.value as? AuthNavigationEvent.RequireLogin
         assertTrue(event?.reason == AuthErrorCode.SESSION_INVALID)
@@ -91,72 +85,62 @@ class DefaultAuthSessionRepositoryTest {
 
     @Test
     fun refreshAccessToken_sendsBearerToken_whenTokenExists() = runTest {
-        val authApi = FakeBffAuthApi(
+        val authClient = FakeOidcAuthClient(
             refreshResult = RefreshAccessTokenResult(
                 accessToken = "new-token",
                 sessionRotated = false,
             ),
         )
         val statusRepository = FakeAuthSessionStatusRepository()
-        val cookieStore = FakeAuthCookieStore()
         val repository = DefaultAuthSessionRepository(
-            authApi = authApi,
+            authClient = authClient,
             sessionStore = AuthSessionStore(),
             sessionStatusRepository = statusRepository,
-            authCookieStore = cookieStore,
         )
         repository.setAccessToken("active-token")
 
         repository.refreshAccessToken("https://portal.yamichi.com")
 
-        assertEquals("active-token", authApi.lastRefreshAccessToken)
+        assertEquals("active-token", authClient.lastRefreshAccessToken)
     }
 
     @Test
     fun logout_clearsLocalSessionState() = runTest {
-        val authApi = FakeBffAuthApi()
+        val authClient = FakeOidcAuthClient()
         val statusRepository = FakeAuthSessionStatusRepository()
-        val cookieStore = FakeAuthCookieStore()
         val repository = DefaultAuthSessionRepository(
-            authApi = authApi,
+            authClient = authClient,
             sessionStore = AuthSessionStore(),
             sessionStatusRepository = statusRepository,
-            authCookieStore = cookieStore,
         )
         repository.setAccessToken("active-token")
 
         repository.logout("https://portal.yamichi.com")
 
-        assertEquals(1, authApi.logoutCalls)
-        assertEquals("active-token", authApi.lastLogoutAccessToken)
+        assertEquals(1, authClient.logoutCalls)
         assertEquals(1, statusRepository.clearSessionCalls)
-        assertEquals(1, cookieStore.clearCalls)
         assertEquals(null, repository.accessToken.value)
     }
 
-    private class FakeBffAuthApi(
+    private class FakeOidcAuthClient(
         private val refreshResult: RefreshAccessTokenResult? = null,
         private val refreshError: Throwable? = null,
-    ) : BffAuthApi {
+    ) : OidcAuthClient {
         var refreshCalls: Int = 0
         var logoutCalls: Int = 0
         var lastRefreshAccessToken: String? = null
-        var lastLogoutAccessToken: String? = null
 
-        override suspend fun completeLogin(
-            baseUrl: String,
-            state: String,
-            code: String?,
-            error: String?,
-            errorDescription: String?,
-        ): CompleteLoginResult = CompleteLoginResult()
+        override suspend fun createLoginUri() = android.net.Uri.parse("movementlog://auth/callback")
 
-        override suspend fun refreshAccessToken(
-            baseUrl: String,
-            accessToken: String?,
-        ): RefreshAccessTokenResult {
+        override suspend fun completeAuthorization(callback: OidcAuthorizationCallback): RefreshAccessTokenResult =
+            refreshResult ?: RefreshAccessTokenResult(
+                accessToken = "token",
+                sessionRotated = false,
+            )
+
+        override suspend fun refreshAccessToken(currentAccessToken: String?): RefreshAccessTokenResult {
             refreshCalls += 1
-            lastRefreshAccessToken = accessToken
+            lastRefreshAccessToken = currentAccessToken
             refreshError?.let { throw it }
             return refreshResult ?: RefreshAccessTokenResult(
                 accessToken = "token",
@@ -164,17 +148,8 @@ class DefaultAuthSessionRepositoryTest {
             )
         }
 
-        override suspend fun logout(baseUrl: String, accessToken: String?) {
+        override suspend fun logout() {
             logoutCalls += 1
-            lastLogoutAccessToken = accessToken
-        }
-    }
-
-    private class FakeAuthCookieStore : AuthCookieStore {
-        var clearCalls: Int = 0
-
-        override fun clear() {
-            clearCalls += 1
         }
     }
 

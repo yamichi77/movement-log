@@ -68,5 +68,9 @@ class AndroidConnectionSettingsRepositoryTest {
         override fun setAccessToken(token: String?) {
             tokenState.value = token
         }
+
+        override fun clearTokens() {
+            tokenState.value = null
+        }
     }
 }

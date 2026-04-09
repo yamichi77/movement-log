@@ -15,13 +15,14 @@ interface AuthSessionRepository {
     suspend fun logout(baseUrl: String)
 
     fun setAccessToken(token: String?)
+
+    fun clearTokens()
 }
 
 class DefaultAuthSessionRepository(
-    private val authApi: BffAuthApi,
+    private val authClient: OidcAuthClient,
     private val sessionStore: AuthSessionStore,
     private val sessionStatusRepository: AuthSessionStatusRepository,
-    private val authCookieStore: AuthCookieStore,
 ) : AuthSessionRepository {
     override val accessToken: StateFlow<String?> = sessionStore.accessToken
 
@@ -41,16 +42,14 @@ class DefaultAuthSessionRepository(
         sessionStore.setAccessToken(token)
     }
 
+    override fun clearTokens() {
+        sessionStore.clearTokens()
+    }
+
     override suspend fun logout(baseUrl: String) {
         refreshMutex.withLock {
-            val normalizedBaseUrl = baseUrl.trim()
-            runCatching {
-                if (normalizedBaseUrl.isNotBlank()) {
-                    authApi.logout(normalizedBaseUrl, accessToken.value)
-                }
-            }
-            sessionStore.setAccessToken(null)
-            authCookieStore.clear()
+            runCatching { authClient.logout() }
+            sessionStore.clearTokens()
             runCatching { sessionStatusRepository.clearSession() }
             AuthNavigationEventBus.clear()
         }
@@ -62,9 +61,8 @@ class DefaultAuthSessionRepository(
 
         while (true) {
             try {
-                val result = authApi.refreshAccessToken(
-                    baseUrl = baseUrl,
-                    accessToken = accessToken.value,
+                val result = authClient.refreshAccessToken(
+                    currentAccessToken = accessToken.value,
                 )
                 sessionStore.setAccessToken(result.accessToken)
                 runCatching { sessionStatusRepository.markRefreshSucceeded() }
@@ -99,7 +97,7 @@ class DefaultAuthSessionRepository(
     }
 
     private suspend fun requireLogin(reason: AuthErrorCode, baseUrl: String) {
-        sessionStore.setAccessToken(null)
+        sessionStore.clearTokens()
         runCatching { sessionStatusRepository.markReauthRequired(reason = reason) }
         AuthNavigationEventBus.requireLogin(
             reason = reason,

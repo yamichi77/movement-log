@@ -34,20 +34,21 @@ object AuthHttpClientProvider {
     fun get(context: Context): OkHttpClient =
         instance ?: synchronized(this) {
             instance ?: OkHttpClient.Builder()
-                .cookieJar(PersistentCookieJarProvider.get(context.applicationContext))
                 .build()
                 .also { instance = it }
         }
 }
 
-object BffAuthApiProvider {
+object OidcAuthClientProvider {
     @Volatile
-    private var instance: BffAuthApi? = null
+    private var instance: OidcAuthClient? = null
 
-    fun get(context: Context): BffAuthApi =
+    fun get(context: Context): OidcAuthClient =
         instance ?: synchronized(this) {
-            instance ?: HttpBffAuthApi(
+            instance ?: HttpOidcAuthClient(
                 client = AuthHttpClientProvider.get(context.applicationContext),
+                sessionStore = AuthSessionStoreProvider.get(context.applicationContext),
+                config = buildOidcAuthConfig(),
             ).also { instance = it }
         }
 }
@@ -71,12 +72,11 @@ object AuthSessionRepositoryProvider {
     fun get(context: Context): AuthSessionRepository =
         instance ?: synchronized(this) {
             instance ?: DefaultAuthSessionRepository(
-                authApi = BffAuthApiProvider.get(context.applicationContext),
+                authClient = OidcAuthClientProvider.get(context.applicationContext),
                 sessionStore = AuthSessionStoreProvider.get(context.applicationContext),
                 sessionStatusRepository = AuthSessionStatusRepositoryProvider.get(
                     context.applicationContext,
                 ),
-                authCookieStore = PersistentCookieJarProvider.getStore(context.applicationContext),
             ).also { instance = it }
         }
 
