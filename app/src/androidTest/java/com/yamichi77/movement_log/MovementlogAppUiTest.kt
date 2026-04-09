@@ -109,7 +109,8 @@ class MovementlogAppUiTest {
         ensureConnectionSettingsSectionExpanded()
         ensureTrackingFrequencySectionExpanded()
 
-        composeRule.onNodeWithTag(CONNECTION_SETTINGS_BASE_URL_FIELD_TAG).performTextReplacement("https://10.0.2.2")
+        composeRule.onNodeWithTag(CONNECTION_SETTINGS_BASE_URL_FIELD_TAG)
+            .performTextReplacement("https://emulator.example.invalid")
         composeRule.onNodeWithTag(CONNECTION_SETTINGS_UPLOAD_PATH_FIELD_TAG).performTextReplacement("/api/movelog")
         composeRule.onNodeWithTag(CONNECTION_SETTINGS_WALKING_INTERVAL_FIELD_TAG).performTextReplacement("31")
         composeRule.onNodeWithTag(CONNECTION_SETTINGS_RUNNING_INTERVAL_FIELD_TAG).performTextReplacement("26")
@@ -132,7 +133,7 @@ class MovementlogAppUiTest {
         ensureConnectionSettingsSectionExpanded()
         ensureTrackingFrequencySectionExpanded()
 
-        val expectedBaseUrl = "https://10.0.2.15"
+        val expectedBaseUrl = "https://restore.example.invalid"
         val expectedUploadPath = "/api/restore-test"
         val expectedWalkingInterval = "33"
         val expectedStillInterval = "903"
@@ -189,7 +190,7 @@ class MovementlogAppUiTest {
         ensureConnectionSettingsSectionExpanded()
 
         composeRule.onNodeWithTag(CONNECTION_SETTINGS_BASE_URL_FIELD_TAG)
-            .performTextReplacement("https://example.invalid")
+            .performTextReplacement("https://connectivity.example.invalid")
         composeRule.onNodeWithTag(CONNECTION_SETTINGS_UPLOAD_PATH_FIELD_TAG)
             .performTextReplacement("/api/movelog")
 

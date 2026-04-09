@@ -31,12 +31,12 @@ class HttpMovementApiGateway(
             .post("{}".toRequestBody(JsonMediaType))
             .header("Authorization", "Bearer $token")
             .build()
-        logDebug("verifyToken: url=$requestUrl")
+        logDebug("verifyToken: request start")
 
         client.newCall(request).execute().use { response ->
             val responseBody = response.body?.string().orEmpty()
             logDebug(
-                "verifyToken: response code=${response.code} body=${responseBody.take(LogBodyPreviewLength)}",
+                "verifyToken: response code=${response.code} bodyLength=${responseBody.length}",
             )
             if (response.code == 401) {
                 throw UnauthorizedApiException(
@@ -72,12 +72,12 @@ class HttpMovementApiGateway(
             .post(bodyJson.toRequestBody(JsonMediaType))
             .header("Authorization", "Bearer $token")
             .build()
-        logDebug("uploadMovementLog: url=$requestUrl body=$bodyJson")
+        logDebug("uploadMovementLog: request start")
 
         client.newCall(httpRequest).execute().use { response ->
             val responseBody = response.body?.string().orEmpty()
             logDebug(
-                "uploadMovementLog: response code=${response.code} body=${responseBody.take(LogBodyPreviewLength)}",
+                "uploadMovementLog: response code=${response.code} bodyLength=${responseBody.length}",
             )
             if (response.code == 401) {
                 throw UnauthorizedApiException(
@@ -153,12 +153,8 @@ class HttpMovementApiGateway(
         code: Int,
         responseBody: String,
     ): String {
-        val normalizedBody = responseBody.trim()
-        return if (normalizedBody.isBlank()) {
-            "$prefix: code=$code"
-        } else {
-            "$prefix: code=$code body=$normalizedBody"
-        }
+        if (responseBody.isBlank()) return "$prefix: code=$code"
+        return "$prefix: code=$code responseBodyPresent=true"
     }
 
     private fun logDebug(message: String) {
@@ -167,7 +163,6 @@ class HttpMovementApiGateway(
 
     private companion object {
         const val LogTag = "HttpMovementApiGateway"
-        const val LogBodyPreviewLength = 500
         val JsonMediaType = "application/json; charset=utf-8".toMediaType()
     }
 }

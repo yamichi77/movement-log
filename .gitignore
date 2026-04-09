@@ -5,9 +5,13 @@ build/
 
 # Local configuration file (sdk path, etc)
 local.properties
+cert.txt
 
 # Log/OS Files
 *.log
+docs/build-logs/
+.tmp/
+.gradle-user-home/
 
 # Android Studio generated files and folders
 .android/
