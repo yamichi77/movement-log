@@ -5,7 +5,20 @@ data class RefreshAccessTokenResult(
     val sessionRotated: Boolean,
 )
 
+data class CompleteLoginResult(
+    val accessToken: String? = null,
+    val sessionRotated: Boolean = false,
+)
+
 interface BffAuthApi {
+    suspend fun completeLogin(
+        baseUrl: String,
+        state: String,
+        code: String?,
+        error: String?,
+        errorDescription: String?,
+    ): CompleteLoginResult
+
     suspend fun refreshAccessToken(baseUrl: String, accessToken: String?): RefreshAccessTokenResult
 
     suspend fun logout(baseUrl: String, accessToken: String?)

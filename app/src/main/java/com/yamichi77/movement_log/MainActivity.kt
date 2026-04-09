@@ -37,11 +37,16 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.yamichi77.movement_log.data.auth.AuthNavigationEvent
 import com.yamichi77.movement_log.data.auth.AuthNavigationEventBus
+import com.yamichi77.movement_log.data.auth.AuthCallbackLoginCompleter
+import com.yamichi77.movement_log.data.auth.AuthCallbackPayload
+import com.yamichi77.movement_log.data.auth.BffAuthApiProvider
 import com.yamichi77.movement_log.data.auth.AuthSessionStatusRepositoryProvider
 import com.yamichi77.movement_log.data.auth.AuthSessionStoreProvider
+import com.yamichi77.movement_log.data.auth.establishManagedSession
 import com.yamichi77.movement_log.data.repository.ConnectionSettingsRepositoryProvider
 import com.yamichi77.movement_log.data.settings.ConnectionSettings
 import com.yamichi77.movement_log.data.sync.AuthKeepAliveSchedulerProvider
+import com.yamichi77.movement_log.data.sync.LogSyncSchedulerProvider
 import com.yamichi77.movement_log.navigation.AppRoute
 import com.yamichi77.movement_log.navigation.TopLevelDestination
 import com.yamichi77.movement_log.permission.PermissionUtils
@@ -52,6 +57,7 @@ import com.yamichi77.movement_log.ui.screen.HomeScreen
 import com.yamichi77.movement_log.ui.screen.LogTableScreen
 import com.yamichi77.movement_log.ui.screen.PermissionScreen
 import com.yamichi77.movement_log.ui.theme.MovementlogTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -72,15 +78,44 @@ class MainActivity : ComponentActivity() {
     private fun handleAuthCallback(intent: Intent?) {
         val callbackUri = intent?.data ?: return
         Log.d("MainActivity", "handleAuthCallback uri=$callbackUri")
-        val accessToken = callbackUri.accessTokenFromCallback() ?: return
-        Log.d("MainActivity", "access token received from callback")
-        AuthSessionStoreProvider.get().setAccessToken(accessToken)
-        AuthKeepAliveSchedulerProvider.get(applicationContext).start()
-        lifecycleScope.launch {
-            AuthSessionStatusRepositoryProvider.get(applicationContext)
-                .markSessionEstablished()
+        val payload = callbackUri.toAuthCallbackPayload()
+        if (!payload.hasUsableData) {
+            Log.w("MainActivity", "auth callback missing usable auth data")
+            return
         }
+        setIntent(Intent(intent).apply { data = null })
         AuthNavigationEventBus.clear()
+        lifecycleScope.launch {
+            val connectionSettingsRepository = ConnectionSettingsRepositoryProvider.get(
+                applicationContext,
+            )
+            val baseUrl = connectionSettingsRepository.settings.first().baseUrl
+            val completer = AuthCallbackLoginCompleter(
+                authApi = BffAuthApiProvider.get(applicationContext),
+                sessionStore = AuthSessionStoreProvider.get(applicationContext),
+                sessionStatusRepository = AuthSessionStatusRepositoryProvider.get(applicationContext),
+            )
+            runCatching {
+                completer.complete(
+                    baseUrl = baseUrl,
+                    payload = payload,
+                )
+            }.onSuccess { result ->
+                Log.d(
+                    "MainActivity",
+                    "auth callback completed sessionRotated=${result.sessionRotated}",
+                )
+                connectionSettingsRepository.saveSendStatusText("")
+                establishManagedSession(
+                    authSessionStatusRepository =
+                        AuthSessionStatusRepositoryProvider.get(applicationContext),
+                    authKeepAliveScheduler = AuthKeepAliveSchedulerProvider.get(applicationContext),
+                    logSyncScheduler = LogSyncSchedulerProvider.get(applicationContext),
+                )
+            }.onFailure { error ->
+                Log.e("MainActivity", "auth callback handling failed", error)
+            }
+        }
     }
 }
 
@@ -233,6 +268,23 @@ private fun buildLoginUri(baseUrl: String): Uri? {
     return Uri.parse(loginUrl.toString())
 }
 
+private fun Uri.toAuthCallbackPayload(): AuthCallbackPayload {
+    val normalizedAccessToken = accessTokenFromCallback()
+    val normalizedState = getQueryParameter("state")?.trim()?.takeIf { it.isNotBlank() }
+    val normalizedCode = getQueryParameter("code")?.trim()?.takeIf { it.isNotBlank() }
+    val normalizedError = getQueryParameter("error")?.trim()?.takeIf { it.isNotBlank() }
+    val normalizedErrorDescription = getQueryParameter("error_description")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+    return AuthCallbackPayload(
+        accessToken = normalizedAccessToken,
+        state = normalizedState,
+        code = normalizedCode,
+        error = normalizedError,
+        errorDescription = normalizedErrorDescription,
+    )
+}
+
 private fun Uri.accessTokenFromCallback(): String? {
     TokenParamCandidates.forEach { key ->
         getQueryParameter(key)?.takeIf { it.isNotBlank() }?.let { return it }
@@ -299,3 +351,4 @@ private val TokenParamCandidates = listOf(
     "id_token",
     "jwt",
 )
+

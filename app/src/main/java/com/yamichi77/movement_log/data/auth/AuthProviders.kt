@@ -7,9 +7,11 @@ object AuthSessionStoreProvider {
     @Volatile
     private var instance: AuthSessionStore? = null
 
-    fun get(): AuthSessionStore =
+    fun get(context: Context): AuthSessionStore =
         instance ?: synchronized(this) {
-            instance ?: AuthSessionStore().also { instance = it }
+            instance ?: AuthSessionStore(
+                appContext = context.applicationContext,
+            ).also { instance = it }
         }
 }
 
@@ -70,7 +72,7 @@ object AuthSessionRepositoryProvider {
         instance ?: synchronized(this) {
             instance ?: DefaultAuthSessionRepository(
                 authApi = BffAuthApiProvider.get(context.applicationContext),
-                sessionStore = AuthSessionStoreProvider.get(),
+                sessionStore = AuthSessionStoreProvider.get(context.applicationContext),
                 sessionStatusRepository = AuthSessionStatusRepositoryProvider.get(
                     context.applicationContext,
                 ),

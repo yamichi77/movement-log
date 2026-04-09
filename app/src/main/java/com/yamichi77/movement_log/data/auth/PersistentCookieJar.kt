@@ -1,5 +1,6 @@
 package com.yamichi77.movement_log.data.auth
 
+import android.util.Log
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
@@ -40,6 +41,7 @@ class PersistentCookieJar(
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         if (cookies.isEmpty()) return
+        val receivedNames = cookies.joinToString(",") { it.name }
         synchronized(lock) {
             cookies.forEach { cookie ->
                 val key = cookieKey(cookie)
@@ -50,6 +52,9 @@ class PersistentCookieJar(
                 }
             }
         }
+        logDebug(
+            "saveFromResponse: host=${url.host} received=${cookies.size} names=$receivedNames stored=${snapshotCookieCount()}",
+        )
         persistAsync()
     }
 
@@ -75,6 +80,9 @@ class PersistentCookieJar(
         if (changed) {
             persistAsync()
         }
+        logDebug(
+            "loadForRequest: host=${url.host} matched=${result.size} names=${result.joinToString(",") { it.name }} stored=${snapshotCookieCount()}",
+        )
         return result
     }
 
@@ -104,6 +112,7 @@ class PersistentCookieJar(
                     cookiesByKey[cookieKey(cookie)] = cookie
                 }
         }
+        logDebug("loadPersistedCookies: restored=${snapshotCookieCount()}")
     }
 
     private fun persistAsync() {
@@ -121,7 +130,16 @@ class PersistentCookieJar(
         synchronized(lock) {
             cookiesByKey.clear()
         }
+        logDebug("clear: stored=0")
         persistAsync()
+    }
+
+    private fun snapshotCookieCount(): Int = synchronized(lock) {
+        cookiesByKey.size
+    }
+
+    private fun logDebug(message: String) {
+        runCatching { Log.d(LogTag, message) }
     }
 
     private fun cookieKey(cookie: Cookie): String = buildString {
@@ -180,6 +198,7 @@ class PersistentCookieJar(
     }
 
     private companion object {
+        const val LogTag = "PersistentCookieJar"
         val CookieJsonKey = stringPreferencesKey("cookies_json")
     }
 }

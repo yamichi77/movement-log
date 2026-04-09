@@ -8,6 +8,10 @@ import com.yamichi77.movement_log.data.auth.AuthSessionStatusRepository
 import com.yamichi77.movement_log.data.auth.ReauthRequiredException
 import com.yamichi77.movement_log.data.auth.RefreshAccessTokenResult
 import com.yamichi77.movement_log.data.auth.RefreshTemporaryFailureException
+import com.yamichi77.movement_log.data.auth.UnauthorizedApiException
+import com.yamichi77.movement_log.data.network.MovementApiException
+import com.yamichi77.movement_log.data.network.MovementApiGateway
+import com.yamichi77.movement_log.data.network.MovementLogUploadRequest
 import com.yamichi77.movement_log.data.repository.ConnectionSettingsRepository
 import com.yamichi77.movement_log.data.repository.ConnectivityTestResult
 import com.yamichi77.movement_log.data.settings.ConnectionSettings
@@ -25,6 +29,7 @@ class AuthKeepAliveUseCaseTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
+        val movementApiGateway = FakeMovementApiGateway()
         val authSessionRepository = FakeAuthSessionRepository()
         val statusRepository = FakeAuthSessionStatusRepository(
             AuthSessionStatus(isSessionManaged = false),
@@ -32,6 +37,7 @@ class AuthKeepAliveUseCaseTest {
         val notifier = FakeAuthSessionReauthNotifier()
         val useCase = AuthKeepAliveUseCase(
             connectionSettingsRepository = settingsRepository,
+            movementApiGateway = movementApiGateway,
             authSessionRepository = authSessionRepository,
             sessionStatusRepository = statusRepository,
             reauthNotifier = notifier,
@@ -45,10 +51,11 @@ class AuthKeepAliveUseCaseTest {
     }
 
     @Test
-    fun run_refreshes_whenSessionIsManaged() = runTest {
+    fun run_skipsRefresh_whenCurrentTokenStillVerifies() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
+        val movementApiGateway = FakeMovementApiGateway()
         val authSessionRepository = FakeAuthSessionRepository()
         val statusRepository = FakeAuthSessionStatusRepository(
             AuthSessionStatus(isSessionManaged = true),
@@ -56,6 +63,7 @@ class AuthKeepAliveUseCaseTest {
         val notifier = FakeAuthSessionReauthNotifier()
         val useCase = AuthKeepAliveUseCase(
             connectionSettingsRepository = settingsRepository,
+            movementApiGateway = movementApiGateway,
             authSessionRepository = authSessionRepository,
             sessionStatusRepository = statusRepository,
             reauthNotifier = notifier,
@@ -64,6 +72,36 @@ class AuthKeepAliveUseCaseTest {
         val result = useCase.run()
 
         assertTrue(result is AuthKeepAliveResult.Success)
+        assertEquals(1, movementApiGateway.verifyCalls)
+        assertEquals(0, authSessionRepository.refreshCalls)
+        assertEquals(0, notifier.notifyCalls)
+    }
+
+    @Test
+    fun run_refreshes_whenCurrentTokenIsUnauthorized() = runTest {
+        val settingsRepository = FakeConnectionSettingsRepository(
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
+        )
+        val movementApiGateway = FakeMovementApiGateway().apply {
+            verifyError = UnauthorizedApiException("expired")
+        }
+        val authSessionRepository = FakeAuthSessionRepository()
+        val statusRepository = FakeAuthSessionStatusRepository(
+            AuthSessionStatus(isSessionManaged = true),
+        )
+        val notifier = FakeAuthSessionReauthNotifier()
+        val useCase = AuthKeepAliveUseCase(
+            connectionSettingsRepository = settingsRepository,
+            movementApiGateway = movementApiGateway,
+            authSessionRepository = authSessionRepository,
+            sessionStatusRepository = statusRepository,
+            reauthNotifier = notifier,
+        )
+
+        val result = useCase.run()
+
+        assertTrue(result is AuthKeepAliveResult.Success)
+        assertEquals(1, movementApiGateway.verifyCalls)
         assertEquals(1, authSessionRepository.refreshCalls)
         assertEquals(0, notifier.notifyCalls)
     }
@@ -74,6 +112,7 @@ class AuthKeepAliveUseCaseTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
+        val movementApiGateway = FakeMovementApiGateway()
         val authSessionRepository = FakeAuthSessionRepository()
         val statusRepository = FakeAuthSessionStatusRepository(
             AuthSessionStatus(
@@ -86,6 +125,7 @@ class AuthKeepAliveUseCaseTest {
         val notifier = FakeAuthSessionReauthNotifier()
         val useCase = AuthKeepAliveUseCase(
             connectionSettingsRepository = settingsRepository,
+            movementApiGateway = movementApiGateway,
             authSessionRepository = authSessionRepository,
             sessionStatusRepository = statusRepository,
             reauthNotifier = notifier,
@@ -106,6 +146,7 @@ class AuthKeepAliveUseCaseTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
+        val movementApiGateway = FakeMovementApiGateway()
         val authSessionRepository = FakeAuthSessionRepository()
         val statusRepository = FakeAuthSessionStatusRepository(
             AuthSessionStatus(
@@ -118,6 +159,7 @@ class AuthKeepAliveUseCaseTest {
         val notifier = FakeAuthSessionReauthNotifier()
         val useCase = AuthKeepAliveUseCase(
             connectionSettingsRepository = settingsRepository,
+            movementApiGateway = movementApiGateway,
             authSessionRepository = authSessionRepository,
             sessionStatusRepository = statusRepository,
             reauthNotifier = notifier,
@@ -136,6 +178,9 @@ class AuthKeepAliveUseCaseTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
+        val movementApiGateway = FakeMovementApiGateway().apply {
+            verifyError = UnauthorizedApiException("expired")
+        }
         val authSessionRepository = FakeAuthSessionRepository().apply {
             refreshError = RefreshTemporaryFailureException("temporary")
         }
@@ -145,6 +190,7 @@ class AuthKeepAliveUseCaseTest {
         val notifier = FakeAuthSessionReauthNotifier()
         val useCase = AuthKeepAliveUseCase(
             connectionSettingsRepository = settingsRepository,
+            movementApiGateway = movementApiGateway,
             authSessionRepository = authSessionRepository,
             sessionStatusRepository = statusRepository,
             reauthNotifier = notifier,
@@ -156,10 +202,41 @@ class AuthKeepAliveUseCaseTest {
     }
 
     @Test
+    fun run_returnsRetry_whenTokenVerificationFailsTransiently() = runTest {
+        val settingsRepository = FakeConnectionSettingsRepository(
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
+        )
+        val movementApiGateway = FakeMovementApiGateway().apply {
+            verifyError = MovementApiException("gateway down")
+        }
+        val authSessionRepository = FakeAuthSessionRepository()
+        val statusRepository = FakeAuthSessionStatusRepository(
+            AuthSessionStatus(isSessionManaged = true),
+        )
+        val notifier = FakeAuthSessionReauthNotifier()
+        val useCase = AuthKeepAliveUseCase(
+            connectionSettingsRepository = settingsRepository,
+            movementApiGateway = movementApiGateway,
+            authSessionRepository = authSessionRepository,
+            sessionStatusRepository = statusRepository,
+            reauthNotifier = notifier,
+        )
+
+        val result = useCase.run()
+
+        assertTrue(result is AuthKeepAliveResult.Retry)
+        assertEquals(1, movementApiGateway.verifyCalls)
+        assertEquals(0, authSessionRepository.refreshCalls)
+    }
+
+    @Test
     fun run_notifies_whenRefreshRequiresReauth() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
+        val movementApiGateway = FakeMovementApiGateway().apply {
+            verifyError = UnauthorizedApiException("expired")
+        }
         val authSessionRepository = FakeAuthSessionRepository().apply {
             refreshError = ReauthRequiredException(
                 AuthErrorCode.SESSION_STEP_UP_REQUIRED,
@@ -172,6 +249,7 @@ class AuthKeepAliveUseCaseTest {
         val notifier = FakeAuthSessionReauthNotifier()
         val useCase = AuthKeepAliveUseCase(
             connectionSettingsRepository = settingsRepository,
+            movementApiGateway = movementApiGateway,
             authSessionRepository = authSessionRepository,
             sessionStatusRepository = statusRepository,
             reauthNotifier = notifier,
@@ -205,6 +283,23 @@ class AuthKeepAliveUseCaseTest {
             ConnectivityTestResult(sessionRotated = false)
 
         override suspend fun logout() = Unit
+    }
+
+    private class FakeMovementApiGateway : MovementApiGateway {
+        var verifyCalls: Int = 0
+        var verifyError: Throwable? = null
+
+        override suspend fun verifyToken(baseUrl: String, token: String) {
+            verifyCalls += 1
+            verifyError?.let { throw it }
+        }
+
+        override suspend fun uploadMovementLog(
+            baseUrl: String,
+            uploadPath: String,
+            token: String,
+            request: MovementLogUploadRequest,
+        ) = Unit
     }
 
     private class FakeAuthSessionRepository : AuthSessionRepository {

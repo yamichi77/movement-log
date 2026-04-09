@@ -1,5 +1,6 @@
 package com.yamichi77.movement_log.data.network
 
+import android.util.Log
 import com.yamichi77.movement_log.data.auth.UnauthorizedApiException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,13 +31,30 @@ class HttpMovementApiGateway(
             .post("{}".toRequestBody(JsonMediaType))
             .header("Authorization", "Bearer $token")
             .build()
+        logDebug("verifyToken: url=$requestUrl")
 
         client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            logDebug(
+                "verifyToken: response code=${response.code} body=${responseBody.take(LogBodyPreviewLength)}",
+            )
             if (response.code == 401) {
-                throw UnauthorizedApiException("token verification failed: unauthorized")
+                throw UnauthorizedApiException(
+                    buildFailureMessage(
+                        prefix = "token verification failed",
+                        code = response.code,
+                        responseBody = responseBody,
+                    ),
+                )
             }
             if (!response.isSuccessful) {
-                throw MovementApiException("token verification failed: code=${response.code}")
+                throw MovementApiException(
+                    buildFailureMessage(
+                        prefix = "token verification failed",
+                        code = response.code,
+                        responseBody = responseBody,
+                    ),
+                )
             }
         }
     }
@@ -54,16 +72,39 @@ class HttpMovementApiGateway(
             .post(bodyJson.toRequestBody(JsonMediaType))
             .header("Authorization", "Bearer $token")
             .build()
+        logDebug("uploadMovementLog: url=$requestUrl body=$bodyJson")
 
         client.newCall(httpRequest).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            logDebug(
+                "uploadMovementLog: response code=${response.code} body=${responseBody.take(LogBodyPreviewLength)}",
+            )
             if (response.code == 401) {
-                throw UnauthorizedApiException("upload failed: unauthorized")
+                throw UnauthorizedApiException(
+                    buildFailureMessage(
+                        prefix = "upload failed",
+                        code = response.code,
+                        responseBody = responseBody,
+                    ),
+                )
             }
             if (response.code == 409) {
-                throw DuplicateMovementLogException("upload failed: duplicate")
+                throw DuplicateMovementLogException(
+                    buildFailureMessage(
+                        prefix = "upload failed",
+                        code = response.code,
+                        responseBody = responseBody,
+                    ),
+                )
             }
             if (!response.isSuccessful) {
-                throw MovementApiException("upload failed: code=${response.code}")
+                throw MovementApiException(
+                    buildFailureMessage(
+                        prefix = "upload failed",
+                        code = response.code,
+                        responseBody = responseBody,
+                    ),
+                )
             }
         }
     }
@@ -107,7 +148,26 @@ class HttpMovementApiGateway(
             ?: throw MovementApiException("invalid uploadPath: $uploadPath")
     }
 
+    private fun buildFailureMessage(
+        prefix: String,
+        code: Int,
+        responseBody: String,
+    ): String {
+        val normalizedBody = responseBody.trim()
+        return if (normalizedBody.isBlank()) {
+            "$prefix: code=$code"
+        } else {
+            "$prefix: code=$code body=$normalizedBody"
+        }
+    }
+
+    private fun logDebug(message: String) {
+        runCatching { Log.d(LogTag, message) }
+    }
+
     private companion object {
+        const val LogTag = "HttpMovementApiGateway"
+        const val LogBodyPreviewLength = 500
         val JsonMediaType = "application/json; charset=utf-8".toMediaType()
     }
 }

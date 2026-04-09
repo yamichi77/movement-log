@@ -74,10 +74,16 @@ class DefaultAuthSessionRepository(
                     retriedSessionInvalid = true
                     continue
                 }
-                requireLogin(AuthErrorCode.SESSION_INVALID)
+                requireLogin(
+                    reason = AuthErrorCode.SESSION_INVALID,
+                    baseUrl = baseUrl,
+                )
                 throw error
             } catch (error: ReauthRequiredException) {
-                requireLogin(error.errorCode)
+                requireLogin(
+                    reason = error.errorCode,
+                    baseUrl = baseUrl,
+                )
                 throw error
             } catch (error: RefreshTemporaryFailureException) {
                 val delayMillis = TemporaryFailureRetryDelaysMs.getOrNull(temporaryFailureRetryIndex)
@@ -92,10 +98,13 @@ class DefaultAuthSessionRepository(
         }
     }
 
-    private suspend fun requireLogin(reason: AuthErrorCode) {
+    private suspend fun requireLogin(reason: AuthErrorCode, baseUrl: String) {
         sessionStore.setAccessToken(null)
         runCatching { sessionStatusRepository.markReauthRequired(reason = reason) }
-        AuthNavigationEventBus.requireLogin(reason)
+        AuthNavigationEventBus.requireLogin(
+            reason = reason,
+            baseUrl = baseUrl.trim().takeIf { it.isNotBlank() },
+        )
     }
 
     private companion object {

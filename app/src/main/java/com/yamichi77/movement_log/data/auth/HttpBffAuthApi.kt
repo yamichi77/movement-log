@@ -1,10 +1,16 @@
 package com.yamichi77.movement_log.data.auth
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -16,6 +22,55 @@ class HttpBffAuthApi(
     private val client: OkHttpClient,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) : BffAuthApi {
+    override suspend fun completeLogin(
+        baseUrl: String,
+        state: String,
+        code: String?,
+        error: String?,
+        errorDescription: String?,
+    ): CompleteLoginResult =
+        withContext(Dispatchers.IO) {
+            val base = parseBaseUrl(baseUrl)
+            val urlBuilder = base.newBuilder()
+                .addEncodedPathSegments("api/auth/callback")
+                .addQueryParameter("state", state)
+            code?.let { urlBuilder.addQueryParameter("code", it) }
+            error?.let { urlBuilder.addQueryParameter("error", it) }
+            errorDescription?.let { urlBuilder.addQueryParameter("error_description", it) }
+            val url = urlBuilder.build()
+            Log.d(
+                LogTag,
+                "completeLogin: start host=${base.host} hasCode=${!code.isNullOrBlank()} hasError=${!error.isNullOrBlank()}",
+            )
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                Log.d(
+                    LogTag,
+                    "completeLogin: response code=${response.code} body=${body.take(LogBodyPreviewLength)}",
+                )
+                when {
+                    response.isSuccessful -> parseCompleteLoginSuccess(body)
+                    response.code == 401 -> {
+                        val parsed = parse401Error(body)
+                        Log.w(
+                            LogTag,
+                            "completeLogin: unauthorized errorType=${parsed.javaClass.simpleName} body=${body.take(LogBodyPreviewLength)}",
+                        )
+                        throw parsed
+                    }
+                    else -> {
+                        Log.w(LogTag, "completeLogin: failed code=${response.code}")
+                        throw AuthApiException("login completion failed: code=${response.code}")
+                    }
+                }
+            }
+        }
+
     override suspend fun refreshAccessToken(
         baseUrl: String,
         accessToken: String?,
@@ -25,25 +80,52 @@ class HttpBffAuthApi(
             val url = base.newBuilder()
                 .addEncodedPathSegments("api/auth/token/refresh")
                 .build()
+            val normalizedAccessToken = accessToken?.trim()?.takeIf { it.isNotBlank() }
+            Log.d(
+                LogTag,
+                "refreshAccessToken: start host=${base.host} token=${maskToken(normalizedAccessToken)}",
+            )
             val requestBuilder = Request.Builder()
                 .url(url)
                 .post("{}".toRequestBody(JsonMediaType))
-            accessToken?.trim()?.takeIf { it.isNotBlank() }?.let { token ->
+            normalizedAccessToken?.let { token ->
                 requestBuilder.header("Authorization", "Bearer $token")
             }
             val request = requestBuilder.build()
 
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
+                Log.d(
+                    LogTag,
+                    "refreshAccessToken: response code=${response.code} body=${body.take(LogBodyPreviewLength)}",
+                )
                 when {
-                    response.isSuccessful -> parseRefreshSuccess(body)
-                    response.code == 401 -> throw parse401Error(body)
+                    response.isSuccessful -> {
+                        val parsed = parseRefreshSuccess(body)
+                        Log.d(
+                            LogTag,
+                            "refreshAccessToken: success sessionRotated=${parsed.sessionRotated}",
+                        )
+                        parsed
+                    }
+                    response.code == 401 -> {
+                        val parsed = parse401Error(body)
+                        Log.w(
+                            LogTag,
+                            "refreshAccessToken: unauthorized errorType=${parsed.javaClass.simpleName} body=${body.take(LogBodyPreviewLength)}",
+                        )
+                        throw parsed
+                    }
                     response.code == 503 && body.contains(
                         AuthErrorCode.REFRESH_TEMPORARY_FAILURE.name,
-                    ) -> throw RefreshTemporaryFailureException(
-                        "refresh temporary failure",
-                    )
-                    else -> throw AuthApiException("refresh failed: code=${response.code}")
+                    ) -> {
+                        Log.w(LogTag, "refreshAccessToken: temporary failure")
+                        throw RefreshTemporaryFailureException("refresh temporary failure")
+                    }
+                    else -> {
+                        Log.w(LogTag, "refreshAccessToken: failed code=${response.code}")
+                        throw AuthApiException("refresh failed: code=${response.code}")
+                    }
                 }
             }
         }
@@ -53,15 +135,21 @@ class HttpBffAuthApi(
         val url = base.newBuilder()
             .addEncodedPathSegments("api/auth/logout")
             .build()
+        val normalizedAccessToken = accessToken?.trim()?.takeIf { it.isNotBlank() }
+        Log.d(
+            LogTag,
+            "logout: start host=${base.host} token=${maskToken(normalizedAccessToken)}",
+        )
         val requestBuilder = Request.Builder()
             .url(url)
             .post("{}".toRequestBody(JsonMediaType))
-        accessToken?.trim()?.takeIf { it.isNotBlank() }?.let { token ->
+        normalizedAccessToken?.let { token ->
             requestBuilder.header("Authorization", "Bearer $token")
         }
         val request = requestBuilder.build()
 
         client.newCall(request).execute().use { response ->
+            Log.d(LogTag, "logout: response code=${response.code}")
             if (response.code != 204 && !response.isSuccessful) {
                 throw AuthApiException("logout failed: code=${response.code}")
             }
@@ -80,6 +168,23 @@ class HttpBffAuthApi(
         return RefreshAccessTokenResult(
             accessToken = dto.accessToken,
             sessionRotated = dto.sessionRotated,
+        )
+    }
+
+    private fun parseCompleteLoginSuccess(body: String): CompleteLoginResult {
+        val normalizedBody = body.trim()
+        if (normalizedBody.isBlank()) return CompleteLoginResult()
+        val jsonObject = runCatching {
+            json.parseToJsonElement(normalizedBody).jsonObject
+        }.getOrElse {
+            return CompleteLoginResult()
+        }
+        return CompleteLoginResult(
+            accessToken = jsonObject.stringOrNull("access_token")
+                ?: jsonObject.stringOrNull("token")
+                ?: jsonObject.stringOrNull("id_token")
+                ?: jsonObject.stringOrNull("jwt"),
+            sessionRotated = jsonObject.booleanOrFalse("session_rotated"),
         )
     }
 
@@ -126,6 +231,18 @@ class HttpBffAuthApi(
             ?: throw AuthApiException("invalid baseUrl: $baseUrl")
     }
 
+    private fun maskToken(token: String?): String {
+        val normalized = token?.trim()?.takeIf { it.isNotBlank() } ?: return "<none>"
+        if (normalized.length <= 8) return "***"
+        return "${normalized.take(4)}...${normalized.takeLast(4)}"
+    }
+
+    private fun JsonObject.stringOrNull(key: String): String? =
+        this[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+
+    private fun JsonObject.booleanOrFalse(key: String): Boolean =
+        this[key]?.jsonPrimitive?.booleanOrNull ?: false
+
     @Serializable
     private data class RefreshTokenResponse(
         @SerialName("access_token")
@@ -135,6 +252,8 @@ class HttpBffAuthApi(
     )
 
     private companion object {
+        const val LogTag = "HttpBffAuthApi"
+        const val LogBodyPreviewLength = 500
         val JsonMediaType = "application/json; charset=utf-8".toMediaType()
     }
 }
