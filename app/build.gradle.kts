@@ -17,6 +17,25 @@ val localProperties =
 val mapsApiKey = localProperties.getProperty("MAPS_API_KEY", "")
 val escapedMapsApiKey = mapsApiKey.replace("\"", "\\\"")
 val localDebugGps = localProperties.getProperty("DEBUG", "false").equals("true", ignoreCase = true)
+val authIssuer = localProperties.getProperty("AUTH_ISSUER", "")
+val authClientId = localProperties.getProperty("AUTH_CLIENT_ID", "")
+val authRedirectUri = localProperties.getProperty("AUTH_REDIRECT_URI", "movementlog://auth/callback")
+val authScopes = localProperties.getProperty("AUTH_SCOPES", "openid profile")
+val authUseOfflineAccess = localProperties.getProperty("AUTH_USE_OFFLINE_ACCESS", "false")
+    .equals("true", ignoreCase = true)
+val normalizedAuthScopes = buildSet {
+    authScopes.split(" ")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .forEach(::add)
+    if (authUseOfflineAccess) {
+        add("offline_access")
+    }
+}.joinToString(" ")
+val escapedAuthIssuer = authIssuer.replace("\"", "\\\"")
+val escapedAuthClientId = authClientId.replace("\"", "\\\"")
+val escapedAuthRedirectUri = authRedirectUri.replace("\"", "\\\"")
+val escapedAuthScopes = normalizedAuthScopes.replace("\"", "\\\"")
 
 android {
     namespace = "com.yamichi77.movement_log"
@@ -37,6 +56,11 @@ android {
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "MAPS_API_KEY", "\"$escapedMapsApiKey\"")
         buildConfigField("boolean", "LOCAL_DEBUG_GPS", localDebugGps.toString())
+        buildConfigField("String", "AUTH_ISSUER", "\"$escapedAuthIssuer\"")
+        buildConfigField("String", "AUTH_CLIENT_ID", "\"$escapedAuthClientId\"")
+        buildConfigField("String", "AUTH_REDIRECT_URI", "\"$escapedAuthRedirectUri\"")
+        buildConfigField("String", "AUTH_SCOPES", "\"$escapedAuthScopes\"")
+        buildConfigField("boolean", "AUTH_USE_OFFLINE_ACCESS", authUseOfflineAccess.toString())
     }
 
     buildTypes {
@@ -86,6 +110,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.browser)
+    implementation(libs.androidx.security.crypto)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)

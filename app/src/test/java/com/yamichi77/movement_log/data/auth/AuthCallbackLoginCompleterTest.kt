@@ -14,11 +14,11 @@ import org.junit.Test
 class AuthCallbackLoginCompleterTest {
     @Test
     fun complete_usesDirectAccessToken_whenPresent() = runTest {
-        val authApi = FakeBffAuthApi()
+        val authClient = FakeOidcAuthClient()
         val sessionStore = AuthSessionStore()
         val statusRepository = FakeAuthSessionStatusRepository()
         val completer = AuthCallbackLoginCompleter(
-            authApi = authApi,
+            authClient = authClient,
             sessionStore = sessionStore,
             sessionStatusRepository = statusRepository,
         )
@@ -30,16 +30,14 @@ class AuthCallbackLoginCompleterTest {
 
         assertEquals("direct-token", result.accessToken)
         assertEquals("direct-token", sessionStore.accessToken.value)
-        assertEquals(0, authApi.completeLoginCalls)
-        assertEquals(0, authApi.refreshCalls)
+        assertEquals(0, authClient.completeAuthorizationCalls)
         assertEquals(1, statusRepository.markSessionEstablishedCalls)
     }
 
     @Test
-    fun complete_exchangesCodeAndRefreshes_whenCallbackBodyHasNoToken() = runTest {
-        val authApi = FakeBffAuthApi(
-            completeLoginResult = CompleteLoginResult(),
-            refreshResult = RefreshAccessTokenResult(
+    fun complete_exchangesCodeAndStoresTokens_whenCallbackHasCode() = runTest {
+        val authClient = FakeOidcAuthClient(
+            completionResult = RefreshAccessTokenResult(
                 accessToken = "refreshed-token",
                 sessionRotated = true,
             ),
@@ -47,7 +45,7 @@ class AuthCallbackLoginCompleterTest {
         val sessionStore = AuthSessionStore()
         val statusRepository = FakeAuthSessionStatusRepository()
         val completer = AuthCallbackLoginCompleter(
-            authApi = authApi,
+            authClient = authClient,
             sessionStore = sessionStore,
             sessionStatusRepository = statusRepository,
         )
@@ -60,10 +58,9 @@ class AuthCallbackLoginCompleterTest {
             ),
         )
 
-        assertEquals(1, authApi.completeLoginCalls)
-        assertEquals(1, authApi.refreshCalls)
-        assertEquals("state-123", authApi.lastState)
-        assertEquals("code-123", authApi.lastCode)
+        assertEquals(1, authClient.completeAuthorizationCalls)
+        assertEquals("state-123", authClient.lastState)
+        assertEquals("code-123", authClient.lastCode)
         assertEquals("refreshed-token", result.accessToken)
         assertEquals("refreshed-token", sessionStore.accessToken.value)
         assertEquals(1, statusRepository.markSessionEstablishedCalls)
@@ -71,11 +68,11 @@ class AuthCallbackLoginCompleterTest {
 
     @Test
     fun complete_throws_whenCallbackHasErrorWithoutCode() = runTest {
-        val authApi = FakeBffAuthApi()
+        val authClient = FakeOidcAuthClient()
         val sessionStore = AuthSessionStore()
         val statusRepository = FakeAuthSessionStatusRepository()
         val completer = AuthCallbackLoginCompleter(
-            authApi = authApi,
+            authClient = authClient,
             sessionStore = sessionStore,
             sessionStatusRepository = statusRepository,
         )
@@ -93,44 +90,32 @@ class AuthCallbackLoginCompleterTest {
 
         assertTrue(error is AuthApiException)
         assertNull(sessionStore.accessToken.value)
-        assertEquals(0, authApi.completeLoginCalls)
+        assertEquals(0, authClient.completeAuthorizationCalls)
         assertEquals(0, statusRepository.markSessionEstablishedCalls)
     }
 
-    private class FakeBffAuthApi(
-        private val completeLoginResult: CompleteLoginResult = CompleteLoginResult(),
-        private val refreshResult: RefreshAccessTokenResult = RefreshAccessTokenResult(
+    private class FakeOidcAuthClient(
+        private val completionResult: RefreshAccessTokenResult = RefreshAccessTokenResult(
             accessToken = "fallback-token",
             sessionRotated = false,
         ),
-    ) : BffAuthApi {
-        var completeLoginCalls: Int = 0
-        var refreshCalls: Int = 0
+    ) : OidcAuthClient {
+        var completeAuthorizationCalls: Int = 0
         var lastState: String? = null
         var lastCode: String? = null
 
-        override suspend fun completeLogin(
-            baseUrl: String,
-            state: String,
-            code: String?,
-            error: String?,
-            errorDescription: String?,
-        ): CompleteLoginResult {
-            completeLoginCalls += 1
-            lastState = state
-            lastCode = code
-            return completeLoginResult
+        override suspend fun createLoginUri() = android.net.Uri.parse("movementlog://auth/callback")
+
+        override suspend fun completeAuthorization(callback: OidcAuthorizationCallback): RefreshAccessTokenResult {
+            completeAuthorizationCalls += 1
+            lastState = callback.state
+            lastCode = callback.code
+            return completionResult
         }
 
-        override suspend fun refreshAccessToken(
-            baseUrl: String,
-            accessToken: String?,
-        ): RefreshAccessTokenResult {
-            refreshCalls += 1
-            return refreshResult
-        }
+        override suspend fun refreshAccessToken(currentAccessToken: String?) = completionResult
 
-        override suspend fun logout(baseUrl: String, accessToken: String?) = Unit
+        override suspend fun logout() = Unit
     }
 
     private class FakeAuthSessionStatusRepository : AuthSessionStatusRepository {

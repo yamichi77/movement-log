@@ -123,7 +123,7 @@ class SyncMovementLogsUseCase(
             sessionStatusRepository.markReauthRequired(
                 reason = AuthErrorCode.SESSION_EXPIRED,
             )
-            authSessionRepository.setAccessToken(null)
+            authSessionRepository.clearTokens()
             AuthNavigationEventBus.requireLogin(
                 reason = AuthErrorCode.SESSION_EXPIRED,
                 baseUrl = settings.baseUrl.trim().takeIf { it.isNotBlank() },

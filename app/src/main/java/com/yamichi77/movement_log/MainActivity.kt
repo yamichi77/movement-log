@@ -3,7 +3,6 @@ package com.yamichi77.movement_log
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.Browser
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,7 +38,7 @@ import com.yamichi77.movement_log.data.auth.AuthNavigationEvent
 import com.yamichi77.movement_log.data.auth.AuthNavigationEventBus
 import com.yamichi77.movement_log.data.auth.AuthCallbackLoginCompleter
 import com.yamichi77.movement_log.data.auth.AuthCallbackPayload
-import com.yamichi77.movement_log.data.auth.BffAuthApiProvider
+import com.yamichi77.movement_log.data.auth.OidcAuthClientProvider
 import com.yamichi77.movement_log.data.auth.AuthSessionStatusRepositoryProvider
 import com.yamichi77.movement_log.data.auth.AuthSessionStoreProvider
 import com.yamichi77.movement_log.data.auth.establishManagedSession
@@ -59,7 +58,6 @@ import com.yamichi77.movement_log.ui.screen.PermissionScreen
 import com.yamichi77.movement_log.ui.theme.MovementlogTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,7 +89,7 @@ class MainActivity : ComponentActivity() {
             )
             val baseUrl = connectionSettingsRepository.settings.first().baseUrl
             val completer = AuthCallbackLoginCompleter(
-                authApi = BffAuthApiProvider.get(applicationContext),
+                authClient = OidcAuthClientProvider.get(applicationContext),
                 sessionStore = AuthSessionStoreProvider.get(applicationContext),
                 sessionStatusRepository = AuthSessionStatusRepositoryProvider.get(applicationContext),
             )
@@ -179,10 +177,14 @@ fun MovementlogApp() {
             AuthNavigationEventBus.clear()
             return@LaunchedEffect
         }
-        val loginBaseUrl = event.baseUrl?.takeIf { it.isNotBlank() } ?: connectionSettings.baseUrl
-        val loginUri = buildLoginUri(loginBaseUrl)
+        val loginUri = runCatching {
+            OidcAuthClientProvider.get(context.applicationContext).createLoginUri()
+        }.getOrElse { error ->
+            Log.e("MainActivity", "failed to build PKCE login uri", error)
+            null
+        }
         if (loginUri == null) {
-            Log.w("MainActivity", "loginUri is null. baseUrl=$loginBaseUrl")
+            Log.w("MainActivity", "loginUri is null. baseUrl=${event.baseUrl ?: connectionSettings.baseUrl}")
             AuthNavigationEventBus.clear()
             return@LaunchedEffect
         }
@@ -254,20 +256,6 @@ fun MovementlogApp() {
     }
 }
 
-private fun buildLoginUri(baseUrl: String): Uri? {
-    val normalized = baseUrl.trim()
-        .ifBlank { return null }
-        .let { raw ->
-            if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
-        }
-    val parsedBase = normalized.toHttpUrlOrNull() ?: return null
-    val loginUrl = parsedBase.newBuilder()
-        .addEncodedPathSegments("api/auth/login")
-        .addQueryParameter("redirect_uri", AuthCallbackUri)
-        .build()
-    return Uri.parse(loginUrl.toString())
-}
-
 private fun Uri.toAuthCallbackPayload(): AuthCallbackPayload {
     val normalizedAccessToken = accessTokenFromCallback()
     val normalizedState = getQueryParameter("state")?.trim()?.takeIf { it.isNotBlank() }
@@ -317,19 +305,14 @@ private fun looksLikeToken(value: String): Boolean {
 }
 
 private fun launchLoginBrowser(context: android.content.Context, loginUri: Uri) {
-    val headers = Bundle().apply {
-        putString("Referer", AuthCallbackUri)
-    }
     runCatching {
         CustomTabsIntent.Builder()
             .build()
-            .also { it.intent.putExtra(Browser.EXTRA_HEADERS, headers) }
             .launchUrl(context, loginUri)
     }.onFailure {
         Log.w("MainActivity", "CustomTabs launch failed, fallback to ACTION_VIEW", it)
         val intent = Intent(Intent.ACTION_VIEW, loginUri).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(Browser.EXTRA_HEADERS, headers)
         }
         runCatching { context.startActivity(intent) }
             .onFailure { fallbackError ->
