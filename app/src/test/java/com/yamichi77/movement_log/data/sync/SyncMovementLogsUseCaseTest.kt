@@ -1,6 +1,11 @@
 package com.yamichi77.movement_log.data.sync
 
+import com.yamichi77.movement_log.data.auth.AuthErrorCode
+import com.yamichi77.movement_log.data.auth.AuthNavigationEvent
+import com.yamichi77.movement_log.data.auth.AuthNavigationEventBus
 import com.yamichi77.movement_log.data.auth.AuthSessionRepository
+import com.yamichi77.movement_log.data.auth.AuthSessionStatus
+import com.yamichi77.movement_log.data.auth.AuthSessionStatusRepository
 import com.yamichi77.movement_log.data.auth.RefreshAccessTokenResult
 import com.yamichi77.movement_log.data.auth.UnauthorizedApiException
 import com.yamichi77.movement_log.data.network.DuplicateMovementLogException
@@ -19,10 +24,64 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SyncMovementLogsUseCaseTest {
+    @Before
+    fun setUp() {
+        AuthNavigationEventBus.clear()
+    }
+
+    @Test
+    fun sync_marksReauthRequired_whenUnauthorizedAfterRefreshRetry() = runTest {
+        AuthNavigationEventBus.clear()
+        val settingsRepository = FakeConnectionSettingsRepository(
+            ConnectionSettings(
+                baseUrl = "https://portal.yamichi.com",
+                uploadPath = "/api/movelog",
+            ),
+        )
+        val uploadRepository = FakeMovementLogUploadRepository(
+            listOf(
+                PendingUploadLog(
+                    id = 12,
+                    recordedAtEpochMillis = 1_700_000_000_000L,
+                    latitude = 35.0,
+                    longitude = 139.0,
+                    accuracy = 3.0f,
+                    activityStatus = "WALKING",
+                ),
+            ),
+        )
+        val gateway = FakeMovementApiGateway().apply {
+            unauthorizedOnce = true
+            uploadErrors += UnauthorizedApiException("still unauthorized")
+        }
+        val authSessionRepository = FakeAuthSessionRepository(initialToken = "expired-token").apply {
+            refreshedToken = "refreshed-token"
+        }
+        val statusRepository = FakeAuthSessionStatusRepository()
+        val useCase = SyncMovementLogsUseCase(
+            connectionSettingsRepository = settingsRepository,
+            movementLogUploadRepository = uploadRepository,
+            movementApiGateway = gateway,
+            authSessionRepository = authSessionRepository,
+            sessionStatusRepository = statusRepository,
+            nowEpochMillis = { 1_700_000_000_000L },
+        )
+
+        val result = useCase.sync()
+
+        assertTrue(result is SyncMovementLogsResult.Retry)
+        assertEquals(listOf(AuthErrorCode.SESSION_EXPIRED), statusRepository.markReauthRequiredReasons)
+        assertEquals(null, authSessionRepository.accessToken.value)
+        val event = AuthNavigationEventBus.event.value as? AuthNavigationEvent.RequireLogin
+        assertEquals(AuthErrorCode.SESSION_EXPIRED, event?.reason)
+        assertEquals("https://portal.yamichi.com", event?.baseUrl)
+    }
+
     @Test
     fun sync_returnsSuccess_whenNoPendingLogs() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
@@ -39,6 +98,7 @@ class SyncMovementLogsUseCaseTest {
             movementLogUploadRepository = uploadRepository,
             movementApiGateway = gateway,
             authSessionRepository = authSessionRepository,
+            sessionStatusRepository = FakeAuthSessionStatusRepository(),
             nowEpochMillis = { 1_700_000_000_000L },
         )
 
@@ -80,6 +140,7 @@ class SyncMovementLogsUseCaseTest {
             movementLogUploadRepository = uploadRepository,
             movementApiGateway = gateway,
             authSessionRepository = authSessionRepository,
+            sessionStatusRepository = FakeAuthSessionStatusRepository(),
             nowEpochMillis = { 1_700_000_000_000L },
         )
 
@@ -108,12 +169,13 @@ class SyncMovementLogsUseCaseTest {
             movementLogUploadRepository = uploadRepository,
             movementApiGateway = gateway,
             authSessionRepository = authSessionRepository,
+            sessionStatusRepository = FakeAuthSessionStatusRepository(),
         )
 
         val result = useCase.sync()
 
         assertTrue(result is SyncMovementLogsResult.Skipped)
-        assertTrue(settingsRepository.lastSendStatus.orEmpty().contains("Base URLが未設定"))
+        assertTrue(settingsRepository.lastSendStatus.orEmpty().contains("BFF Base URLが未設定です"))
     }
 
     @Test
@@ -145,6 +207,7 @@ class SyncMovementLogsUseCaseTest {
             movementLogUploadRepository = uploadRepository,
             movementApiGateway = gateway,
             authSessionRepository = authSessionRepository,
+            sessionStatusRepository = FakeAuthSessionStatusRepository(),
         )
 
         val result = useCase.sync()
@@ -182,6 +245,7 @@ class SyncMovementLogsUseCaseTest {
             movementLogUploadRepository = uploadRepository,
             movementApiGateway = gateway,
             authSessionRepository = authSessionRepository,
+            sessionStatusRepository = FakeAuthSessionStatusRepository(),
         )
 
         val result = useCase.sync()
@@ -288,4 +352,31 @@ class SyncMovementLogsUseCaseTest {
             tokenState.value = null
         }
     }
+
+    private class FakeAuthSessionStatusRepository : AuthSessionStatusRepository {
+        private val statusState = MutableStateFlow(AuthSessionStatus())
+        override val status: Flow<AuthSessionStatus> = statusState.asStateFlow()
+
+        val markReauthRequiredReasons = mutableListOf<AuthErrorCode>()
+
+        override suspend fun markSessionEstablished() = Unit
+
+        override suspend fun markRefreshSucceeded() = Unit
+
+        override suspend fun clearSession() = Unit
+
+        override suspend fun markReauthRequired(reason: AuthErrorCode, detectedAtEpochMillis: Long) {
+            markReauthRequiredReasons += reason
+            statusState.value = statusState.value.copy(
+                isSessionManaged = true,
+                reauthRequired = true,
+                reauthReason = reason,
+                reauthDetectedAtEpochMillis = detectedAtEpochMillis,
+            )
+        }
+
+        override suspend fun markReauthNotificationSent(notifiedAtEpochMillis: Long) = Unit
+    }
 }
+
+

@@ -1,6 +1,10 @@
 package com.yamichi77.movement_log.data.sync
 
+import android.util.Log
+import com.yamichi77.movement_log.data.auth.AuthErrorCode
+import com.yamichi77.movement_log.data.auth.AuthNavigationEventBus
 import com.yamichi77.movement_log.data.auth.AuthSessionRepository
+import com.yamichi77.movement_log.data.auth.AuthSessionStatusRepository
 import com.yamichi77.movement_log.data.auth.RefreshTemporaryFailureException
 import com.yamichi77.movement_log.data.auth.UnauthorizedApiException
 import com.yamichi77.movement_log.data.network.DuplicateMovementLogException
@@ -22,13 +26,16 @@ class SyncMovementLogsUseCase(
     private val movementLogUploadRepository: MovementLogUploadRepository,
     private val movementApiGateway: MovementApiGateway,
     private val authSessionRepository: AuthSessionRepository,
+    private val sessionStatusRepository: AuthSessionStatusRepository,
     private val nowEpochMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     suspend fun sync(limit: Int = DefaultUploadLimit): SyncMovementLogsResult {
+        logDebug("sync: start limit=$limit")
         val now = nowEpochMillis()
         val settings = connectionSettingsRepository.settings.first()
         val settingsError = validateSettings(settings)
         if (settingsError != null) {
+            logWarn("sync: skipped invalid settings reason=$settingsError")
             connectionSettingsRepository.saveSendStatusText(
                 formatStatus(now, "失敗", settingsError),
             )
@@ -37,11 +44,13 @@ class SyncMovementLogsUseCase(
 
         val pendingLogs = movementLogUploadRepository.getPendingLogs(limit)
         if (pendingLogs.isEmpty()) {
+            logDebug("sync: no pending logs")
             connectionSettingsRepository.saveSendStatusText(
                 formatStatus(now, "成功", "未送信ログはありません"),
             )
             return SyncMovementLogsResult.Success(0)
         }
+        logDebug("sync: pending count=${pendingLogs.size}")
 
         val uploadedIds = mutableListOf<Long>()
         return try {
@@ -55,10 +64,12 @@ class SyncMovementLogsUseCase(
                     )
                 } catch (_: DuplicateMovementLogException) {
                     // 既存データとの重複は送信済みとして扱う。
+                    logDebug("sync: duplicate upload treated as uploaded logId=${log.id}")
                 }
                 uploadedIds += log.id
             }
             movementLogUploadRepository.markUploaded(uploadedIds)
+            logDebug("sync: completed uploadedCount=${uploadedIds.size}")
             connectionSettingsRepository.saveSendStatusText(
                 formatStatus(now, "成功", "${uploadedIds.size}件を送信しました"),
             )
@@ -66,6 +77,9 @@ class SyncMovementLogsUseCase(
         } catch (error: Throwable) {
             movementLogUploadRepository.markUploaded(uploadedIds)
             val detail = error.message ?: error::class.simpleName.orEmpty()
+            logWarn(
+                "sync: failed uploadedBeforeFailure=${uploadedIds.size} error=${error::class.simpleName} detail=$detail",
+            )
             connectionSettingsRepository.saveSendStatusText(
                 formatStatus(now, "失敗", detail),
             )
@@ -85,6 +99,7 @@ class SyncMovementLogsUseCase(
         token: String,
         request: MovementLogUploadRequest,
     ): String = try {
+        logDebug("uploadWithRefresh: upload first attempt")
         movementApiGateway.uploadMovementLog(
             baseUrl = settings.baseUrl,
             uploadPath = settings.uploadPath,
@@ -93,14 +108,28 @@ class SyncMovementLogsUseCase(
         )
         token
     } catch (_: UnauthorizedApiException) {
+        logWarn("uploadWithRefresh: unauthorized, trying refresh+retry")
         val refreshed = authSessionRepository.refreshAccessToken(settings.baseUrl).accessToken
-        movementApiGateway.uploadMovementLog(
-            baseUrl = settings.baseUrl,
-            uploadPath = settings.uploadPath,
-            token = refreshed,
-            request = request,
-        )
-        refreshed
+        try {
+            movementApiGateway.uploadMovementLog(
+                baseUrl = settings.baseUrl,
+                uploadPath = settings.uploadPath,
+                token = refreshed,
+                request = request,
+            )
+            refreshed
+        } catch (error: UnauthorizedApiException) {
+            logWarn("uploadWithRefresh: unauthorized after refresh, escalating to reauth")
+            sessionStatusRepository.markReauthRequired(
+                reason = AuthErrorCode.SESSION_EXPIRED,
+            )
+            authSessionRepository.setAccessToken(null)
+            AuthNavigationEventBus.requireLogin(
+                reason = AuthErrorCode.SESSION_EXPIRED,
+                baseUrl = settings.baseUrl.trim().takeIf { it.isNotBlank() },
+            )
+            throw error
+        }
     }
 
     private fun validateSettings(settings: ConnectionSettings): String? {
@@ -119,9 +148,12 @@ class SyncMovementLogsUseCase(
             ),
             latitude = latitude,
             longitude = longitude,
-            accuracy = accuracy.toDouble(),
+            accuracy = accuracy.toNetworkAccuracy(),
             activity = activityStatus,
         )
+
+    private fun Float.toNetworkAccuracy(): Double =
+        toString().toDoubleOrNull() ?: toDouble()
 
     private fun formatStatus(
         nowEpochMillis: Long,
@@ -134,8 +166,17 @@ class SyncMovementLogsUseCase(
         return "最終送信: $timestamp - $result ($detail)"
     }
 
-    private companion object {
-        private const val DefaultUploadLimit = 200
+    private fun logDebug(message: String) {
+        runCatching { Log.d(LogTag, message) }
+    }
+
+    private fun logWarn(message: String) {
+        runCatching { Log.w(LogTag, message) }
+    }
+
+    internal companion object {
+        const val LogTag = "SyncMovementLogsUseCase"
+        internal const val DefaultUploadLimit = 200
         private val UploadTimestampFormatter = DateTimeFormatter.ofPattern(
             "yyyyMMddHHmmss",
             Locale.JAPAN,
@@ -156,3 +197,5 @@ sealed interface SyncMovementLogsResult {
 
     data class Failure(val reason: String) : SyncMovementLogsResult
 }
+
+

@@ -28,14 +28,22 @@ class HttpMovementApiGatewayTest {
         server.shutdown()
     }
 
-    @Test(expected = UnauthorizedApiException::class)
+    @Test
     fun verifyToken_throwsWhenUnauthorized() = runTest {
-        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("unauthorized"))
 
-        gateway.verifyToken(
-            baseUrl = server.url("/").toString(),
-            token = "expired-token",
-        )
+        try {
+            gateway.verifyToken(
+                baseUrl = server.url("/").toString(),
+                token = "expired-token",
+            )
+        } catch (error: UnauthorizedApiException) {
+            assertTrue(error.message.orEmpty().contains("code=401"))
+            assertTrue(error.message.orEmpty().contains("unauthorized"))
+            return@runTest
+        }
+
+        throw AssertionError("UnauthorizedApiException was expected")
     }
 
     @Test
@@ -66,39 +74,87 @@ class HttpMovementApiGatewayTest {
         assertTrue(body.contains("\"Activity\":\"WALKING\""))
     }
 
-    @Test(expected = UnauthorizedApiException::class)
+    @Test
     fun uploadMovementLog_throwsWhenUnauthorized() = runTest {
-        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("token expired"))
 
-        gateway.uploadMovementLog(
-            baseUrl = server.url("/").toString(),
-            uploadPath = "/api/movelog",
-            token = "invalid-token",
-            request = MovementLogUploadRequest(
-                seqTime = "20260216235959",
-                latitude = 35.0,
-                longitude = 139.0,
-                accuracy = 4.5,
-                activity = "WALKING",
-            ),
-        )
+        try {
+            gateway.uploadMovementLog(
+                baseUrl = server.url("/").toString(),
+                uploadPath = "/api/movelog",
+                token = "invalid-token",
+                request = MovementLogUploadRequest(
+                    seqTime = "20260216235959",
+                    latitude = 35.0,
+                    longitude = 139.0,
+                    accuracy = 4.5,
+                    activity = "WALKING",
+                ),
+            )
+        } catch (error: UnauthorizedApiException) {
+            assertTrue(error.message.orEmpty().contains("code=401"))
+            assertTrue(error.message.orEmpty().contains("token expired"))
+            return@runTest
+        }
+
+        throw AssertionError("UnauthorizedApiException was expected")
     }
 
-    @Test(expected = DuplicateMovementLogException::class)
+    @Test
     fun uploadMovementLog_throwsWhenConflict() = runTest {
-        server.enqueue(MockResponse().setResponseCode(409))
+        server.enqueue(MockResponse().setResponseCode(409).setBody("duplicate"))
 
-        gateway.uploadMovementLog(
-            baseUrl = server.url("/").toString(),
-            uploadPath = "/api/movelog",
-            token = "valid-token",
-            request = MovementLogUploadRequest(
-                seqTime = "20260216235959",
-                latitude = 35.0,
-                longitude = 139.0,
-                accuracy = 4.5,
-                activity = "WALKING",
-            ),
+        try {
+            gateway.uploadMovementLog(
+                baseUrl = server.url("/").toString(),
+                uploadPath = "/api/movelog",
+                token = "valid-token",
+                request = MovementLogUploadRequest(
+                    seqTime = "20260216235959",
+                    latitude = 35.0,
+                    longitude = 139.0,
+                    accuracy = 4.5,
+                    activity = "WALKING",
+                ),
+            )
+        } catch (error: DuplicateMovementLogException) {
+            assertTrue(error.message.orEmpty().contains("code=409"))
+            assertTrue(error.message.orEmpty().contains("duplicate"))
+            return@runTest
+        }
+
+        throw AssertionError("DuplicateMovementLogException was expected")
+    }
+
+    @Test
+    fun uploadMovementLog_includesValidationErrorBodyWhenUnprocessable() = runTest {
+        val errorBody = """{"detail":[{"loc":["body","Activity"],"msg":"invalid activity","type":"value_error"}]}"""
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(422)
+                .setBody(errorBody),
         )
+
+        try {
+            gateway.uploadMovementLog(
+                baseUrl = server.url("/").toString(),
+                uploadPath = "/api/movelog",
+                token = "valid-token",
+                request = MovementLogUploadRequest(
+                    seqTime = "20260216235959",
+                    latitude = 35.0,
+                    longitude = 139.0,
+                    accuracy = 4.5,
+                    activity = "停止中",
+                ),
+            )
+        } catch (error: MovementApiException) {
+            assertTrue(error.message.orEmpty().contains("code=422"))
+            assertTrue(error.message.orEmpty().contains("invalid activity"))
+            assertTrue(error.message.orEmpty().contains("Activity"))
+            return@runTest
+        }
+
+        throw AssertionError("MovementApiException was expected")
     }
 }

@@ -41,6 +41,7 @@ class DefaultAuthSessionRepositoryTest {
 
     @Test
     fun refreshAccessToken_marksReauthRequired_whenApiRequiresReauth() = runTest {
+        val baseUrl = "https://portal.yamichi.com"
         val authApi = FakeBffAuthApi(
             refreshError = ReauthRequiredException(
                 AuthErrorCode.SESSION_EXPIRED,
@@ -56,13 +57,17 @@ class DefaultAuthSessionRepositoryTest {
             authCookieStore = cookieStore,
         )
 
-        runCatching { repository.refreshAccessToken("https://portal.yamichi.com") }
+        runCatching { repository.refreshAccessToken(baseUrl) }
 
         assertEquals(listOf(AuthErrorCode.SESSION_EXPIRED), statusRepository.markReauthRequiredReasons)
+        val event = AuthNavigationEventBus.event.value as? AuthNavigationEvent.RequireLogin
+        assertEquals(AuthErrorCode.SESSION_EXPIRED, event?.reason)
+        assertEquals(baseUrl, event?.baseUrl)
     }
 
     @Test
     fun refreshAccessToken_retriesThenMarksSessionInvalid_whenSessionInvalidContinues() = runTest {
+        val baseUrl = "https://portal.yamichi.com"
         val authApi = FakeBffAuthApi(
             refreshError = SessionInvalidException("invalid"),
         )
@@ -75,12 +80,13 @@ class DefaultAuthSessionRepositoryTest {
             authCookieStore = cookieStore,
         )
 
-        runCatching { repository.refreshAccessToken("https://portal.yamichi.com") }
+        runCatching { repository.refreshAccessToken(baseUrl) }
 
         assertEquals(2, authApi.refreshCalls)
         assertEquals(listOf(AuthErrorCode.SESSION_INVALID), statusRepository.markReauthRequiredReasons)
         val event = AuthNavigationEventBus.event.value as? AuthNavigationEvent.RequireLogin
         assertTrue(event?.reason == AuthErrorCode.SESSION_INVALID)
+        assertEquals(baseUrl, event?.baseUrl)
     }
 
     @Test
@@ -136,6 +142,14 @@ class DefaultAuthSessionRepositoryTest {
         var logoutCalls: Int = 0
         var lastRefreshAccessToken: String? = null
         var lastLogoutAccessToken: String? = null
+
+        override suspend fun completeLogin(
+            baseUrl: String,
+            state: String,
+            code: String?,
+            error: String?,
+            errorDescription: String?,
+        ): CompleteLoginResult = CompleteLoginResult()
 
         override suspend fun refreshAccessToken(
             baseUrl: String,
