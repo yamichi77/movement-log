@@ -388,7 +388,7 @@ private fun ConnectionSettingsScreenPreview() {
     MovementlogTheme {
         ConnectionSettingsScreenContent(
             uiState = ConnectionSettingsUiState(
-                baseUrl = "https://portal.yamichi.com",
+                baseUrl = "https://example.invalid",
                 uploadPath = "/api/movelog",
                 walkingIntervalInput = "30",
                 runningIntervalInput = "25",

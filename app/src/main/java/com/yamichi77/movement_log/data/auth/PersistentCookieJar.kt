@@ -41,7 +41,6 @@ class PersistentCookieJar(
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         if (cookies.isEmpty()) return
-        val receivedNames = cookies.joinToString(",") { it.name }
         synchronized(lock) {
             cookies.forEach { cookie ->
                 val key = cookieKey(cookie)
@@ -53,7 +52,7 @@ class PersistentCookieJar(
             }
         }
         logDebug(
-            "saveFromResponse: host=${url.host} received=${cookies.size} names=$receivedNames stored=${snapshotCookieCount()}",
+            "saveFromResponse: received=${cookies.size} stored=${snapshotCookieCount()}",
         )
         persistAsync()
     }
@@ -81,7 +80,7 @@ class PersistentCookieJar(
             persistAsync()
         }
         logDebug(
-            "loadForRequest: host=${url.host} matched=${result.size} names=${result.joinToString(",") { it.name }} stored=${snapshotCookieCount()}",
+            "loadForRequest: matched=${result.size} stored=${snapshotCookieCount()}",
         )
         return result
     }

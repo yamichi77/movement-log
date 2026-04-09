@@ -65,7 +65,7 @@ class HttpOidcAuthClient(
                 codeVerifier = request.codeVerifier,
             ),
         )
-        logDebug("createLoginUri: generated state=${request.state.take(8)}...")
+        logDebug("createLoginUri: generated authorization request")
         return uri
     }
 
@@ -166,7 +166,7 @@ class HttpOidcAuthClient(
             .addPathSegment(".well-known")
             .addPathSegment("openid-configuration")
             .build()
-        logDebug("fetchProviderMetadata: url=$discoveryUrl")
+        logDebug("fetchProviderMetadata: start")
         val request = Request.Builder()
             .url(discoveryUrl)
             .get()

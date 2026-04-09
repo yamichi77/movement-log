@@ -6,7 +6,7 @@ data class ConnectionSettings(
 ) {
     companion object {
         val Default = ConnectionSettings(
-            baseUrl = "https://portal.yamichi.com",
+            baseUrl = "https://example.invalid",
             uploadPath = "/api/movelog",
         )
     }

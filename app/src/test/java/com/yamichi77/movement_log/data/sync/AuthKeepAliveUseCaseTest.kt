@@ -27,7 +27,7 @@ class AuthKeepAliveUseCaseTest {
     @Test
     fun run_skips_whenSessionIsNotManaged() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
-            ConnectionSettings(baseUrl = "https://portal.yamichi.com", uploadPath = "/api/movelog"),
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
         val movementApiGateway = FakeMovementApiGateway()
         val authSessionRepository = FakeAuthSessionRepository()
@@ -53,7 +53,7 @@ class AuthKeepAliveUseCaseTest {
     @Test
     fun run_skipsRefresh_whenCurrentTokenStillVerifies() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
-            ConnectionSettings(baseUrl = "https://portal.yamichi.com", uploadPath = "/api/movelog"),
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
         val movementApiGateway = FakeMovementApiGateway()
         val authSessionRepository = FakeAuthSessionRepository()
@@ -80,7 +80,7 @@ class AuthKeepAliveUseCaseTest {
     @Test
     fun run_refreshes_whenCurrentTokenIsUnauthorized() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
-            ConnectionSettings(baseUrl = "https://portal.yamichi.com", uploadPath = "/api/movelog"),
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
         val movementApiGateway = FakeMovementApiGateway().apply {
             verifyError = UnauthorizedApiException("expired")
@@ -110,7 +110,7 @@ class AuthKeepAliveUseCaseTest {
     fun run_notifies_whenReauthRequiredAndRateLimitAllows() = runTest {
         val now = 1_700_000_000_000L
         val settingsRepository = FakeConnectionSettingsRepository(
-            ConnectionSettings(baseUrl = "https://portal.yamichi.com", uploadPath = "/api/movelog"),
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
         val movementApiGateway = FakeMovementApiGateway()
         val authSessionRepository = FakeAuthSessionRepository()
@@ -144,7 +144,7 @@ class AuthKeepAliveUseCaseTest {
     fun run_suppressesNotify_whenWithinRateLimit() = runTest {
         val now = 1_700_000_000_000L
         val settingsRepository = FakeConnectionSettingsRepository(
-            ConnectionSettings(baseUrl = "https://portal.yamichi.com", uploadPath = "/api/movelog"),
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
         val movementApiGateway = FakeMovementApiGateway()
         val authSessionRepository = FakeAuthSessionRepository()
@@ -176,7 +176,7 @@ class AuthKeepAliveUseCaseTest {
     @Test
     fun run_returnsRetry_whenRefreshTemporaryFailureOccurs() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
-            ConnectionSettings(baseUrl = "https://portal.yamichi.com", uploadPath = "/api/movelog"),
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
         val movementApiGateway = FakeMovementApiGateway().apply {
             verifyError = UnauthorizedApiException("expired")
@@ -204,7 +204,7 @@ class AuthKeepAliveUseCaseTest {
     @Test
     fun run_returnsRetry_whenTokenVerificationFailsTransiently() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
-            ConnectionSettings(baseUrl = "https://portal.yamichi.com", uploadPath = "/api/movelog"),
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
         val movementApiGateway = FakeMovementApiGateway().apply {
             verifyError = MovementApiException("gateway down")
@@ -232,7 +232,7 @@ class AuthKeepAliveUseCaseTest {
     @Test
     fun run_notifies_whenRefreshRequiresReauth() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
-            ConnectionSettings(baseUrl = "https://portal.yamichi.com", uploadPath = "/api/movelog"),
+            ConnectionSettings(baseUrl = "https://example.invalid", uploadPath = "/api/movelog"),
         )
         val movementApiGateway = FakeMovementApiGateway().apply {
             verifyError = UnauthorizedApiException("expired")

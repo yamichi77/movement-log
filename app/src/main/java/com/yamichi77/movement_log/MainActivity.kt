@@ -75,8 +75,11 @@ class MainActivity : ComponentActivity() {
 
     private fun handleAuthCallback(intent: Intent?) {
         val callbackUri = intent?.data ?: return
-        Log.d("MainActivity", "handleAuthCallback uri=$callbackUri")
         val payload = callbackUri.toAuthCallbackPayload()
+        Log.d(
+            "MainActivity",
+            "handleAuthCallback hasCode=${payload.code != null} hasToken=${payload.accessToken != null} hasError=${payload.error != null}",
+        )
         if (!payload.hasUsableData) {
             Log.w("MainActivity", "auth callback missing usable auth data")
             return
@@ -184,11 +187,11 @@ fun MovementlogApp() {
             null
         }
         if (loginUri == null) {
-            Log.w("MainActivity", "loginUri is null. baseUrl=${event.baseUrl ?: connectionSettings.baseUrl}")
+            Log.w("MainActivity", "loginUri is null")
             AuthNavigationEventBus.clear()
             return@LaunchedEffect
         }
-        Log.d("MainActivity", "launch login uri=$loginUri")
+        Log.d("MainActivity", "launch login browser")
         launchLoginBrowser(context, loginUri)
         AuthNavigationEventBus.clear()
     }

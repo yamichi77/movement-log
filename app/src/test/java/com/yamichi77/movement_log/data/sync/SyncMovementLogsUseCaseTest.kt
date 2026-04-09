@@ -39,7 +39,7 @@ class SyncMovementLogsUseCaseTest {
         AuthNavigationEventBus.clear()
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(
-                baseUrl = "https://portal.yamichi.com",
+                baseUrl = "https://example.invalid",
                 uploadPath = "/api/movelog",
             ),
         )
@@ -79,14 +79,14 @@ class SyncMovementLogsUseCaseTest {
         assertEquals(null, authSessionRepository.accessToken.value)
         val event = AuthNavigationEventBus.event.value as? AuthNavigationEvent.RequireLogin
         assertEquals(AuthErrorCode.SESSION_EXPIRED, event?.reason)
-        assertEquals("https://portal.yamichi.com", event?.baseUrl)
+        assertEquals("https://example.invalid", event?.baseUrl)
     }
 
     @Test
     fun sync_returnsSuccess_whenNoPendingLogs() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(
-                baseUrl = "https://portal.yamichi.com",
+                baseUrl = "https://example.invalid",
                 uploadPath = "/api/movelog",
             ),
         )
@@ -113,7 +113,7 @@ class SyncMovementLogsUseCaseTest {
     fun sync_refreshesTokenAndRetries_whenUnauthorizedOnUpload() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(
-                baseUrl = "https://portal.yamichi.com",
+                baseUrl = "https://example.invalid",
                 uploadPath = "/api/movelog",
             ),
         )
@@ -182,7 +182,7 @@ class SyncMovementLogsUseCaseTest {
     fun sync_returnsRetry_whenUploadFailsWithMovementApiException() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(
-                baseUrl = "https://portal.yamichi.com",
+                baseUrl = "https://example.invalid",
                 uploadPath = "/api/movelog",
             ),
         )
@@ -220,7 +220,7 @@ class SyncMovementLogsUseCaseTest {
     fun sync_marksUploaded_whenUploadIsConflict() = runTest {
         val settingsRepository = FakeConnectionSettingsRepository(
             ConnectionSettings(
-                baseUrl = "https://portal.yamichi.com",
+                baseUrl = "https://example.invalid",
                 uploadPath = "/api/movelog",
             ),
         )

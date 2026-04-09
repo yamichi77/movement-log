@@ -40,7 +40,7 @@ class HttpBffAuthApi(
             val url = urlBuilder.build()
             Log.d(
                 LogTag,
-                "completeLogin: start host=${base.host} hasCode=${!code.isNullOrBlank()} hasError=${!error.isNullOrBlank()}",
+                "completeLogin: start hasCode=${!code.isNullOrBlank()} hasError=${!error.isNullOrBlank()}",
             )
             val request = Request.Builder()
                 .url(url)
@@ -51,7 +51,7 @@ class HttpBffAuthApi(
                 val body = response.body?.string().orEmpty()
                 Log.d(
                     LogTag,
-                    "completeLogin: response code=${response.code} body=${body.take(LogBodyPreviewLength)}",
+                    "completeLogin: response code=${response.code} bodyLength=${body.length}",
                 )
                 when {
                     response.isSuccessful -> parseCompleteLoginSuccess(body)
@@ -59,7 +59,7 @@ class HttpBffAuthApi(
                         val parsed = parse401Error(body)
                         Log.w(
                             LogTag,
-                            "completeLogin: unauthorized errorType=${parsed.javaClass.simpleName} body=${body.take(LogBodyPreviewLength)}",
+                            "completeLogin: unauthorized errorType=${parsed.javaClass.simpleName}",
                         )
                         throw parsed
                     }
@@ -83,7 +83,7 @@ class HttpBffAuthApi(
             val normalizedAccessToken = accessToken?.trim()?.takeIf { it.isNotBlank() }
             Log.d(
                 LogTag,
-                "refreshAccessToken: start host=${base.host} token=${maskToken(normalizedAccessToken)}",
+                "refreshAccessToken: start hasAccessToken=${normalizedAccessToken != null}",
             )
             val requestBuilder = Request.Builder()
                 .url(url)
@@ -97,7 +97,7 @@ class HttpBffAuthApi(
                 val body = response.body?.string().orEmpty()
                 Log.d(
                     LogTag,
-                    "refreshAccessToken: response code=${response.code} body=${body.take(LogBodyPreviewLength)}",
+                    "refreshAccessToken: response code=${response.code} bodyLength=${body.length}",
                 )
                 when {
                     response.isSuccessful -> {
@@ -112,7 +112,7 @@ class HttpBffAuthApi(
                         val parsed = parse401Error(body)
                         Log.w(
                             LogTag,
-                            "refreshAccessToken: unauthorized errorType=${parsed.javaClass.simpleName} body=${body.take(LogBodyPreviewLength)}",
+                            "refreshAccessToken: unauthorized errorType=${parsed.javaClass.simpleName}",
                         )
                         throw parsed
                     }
@@ -138,7 +138,7 @@ class HttpBffAuthApi(
         val normalizedAccessToken = accessToken?.trim()?.takeIf { it.isNotBlank() }
         Log.d(
             LogTag,
-            "logout: start host=${base.host} token=${maskToken(normalizedAccessToken)}",
+            "logout: start hasAccessToken=${normalizedAccessToken != null}",
         )
         val requestBuilder = Request.Builder()
             .url(url)
@@ -231,12 +231,6 @@ class HttpBffAuthApi(
             ?: throw AuthApiException("invalid baseUrl: $baseUrl")
     }
 
-    private fun maskToken(token: String?): String {
-        val normalized = token?.trim()?.takeIf { it.isNotBlank() } ?: return "<none>"
-        if (normalized.length <= 8) return "***"
-        return "${normalized.take(4)}...${normalized.takeLast(4)}"
-    }
-
     private fun JsonObject.stringOrNull(key: String): String? =
         this[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
 
@@ -253,7 +247,6 @@ class HttpBffAuthApi(
 
     private companion object {
         const val LogTag = "HttpBffAuthApi"
-        const val LogBodyPreviewLength = 500
         val JsonMediaType = "application/json; charset=utf-8".toMediaType()
     }
 }

@@ -24,7 +24,7 @@ class AuthCallbackLoginCompleterTest {
         )
 
         val result = completer.complete(
-            baseUrl = "https://portal.yamichi.com",
+            baseUrl = "https://example.invalid",
             payload = AuthCallbackPayload(accessToken = "direct-token"),
         )
 
@@ -51,7 +51,7 @@ class AuthCallbackLoginCompleterTest {
         )
 
         val result = completer.complete(
-            baseUrl = "https://portal.yamichi.com",
+            baseUrl = "https://example.invalid",
             payload = AuthCallbackPayload(
                 state = "state-123",
                 code = "code-123",
@@ -79,7 +79,7 @@ class AuthCallbackLoginCompleterTest {
 
         val error = runCatching {
             completer.complete(
-                baseUrl = "https://portal.yamichi.com",
+                baseUrl = "https://example.invalid",
                 payload = AuthCallbackPayload(
                     state = "state-123",
                     error = "access_denied",

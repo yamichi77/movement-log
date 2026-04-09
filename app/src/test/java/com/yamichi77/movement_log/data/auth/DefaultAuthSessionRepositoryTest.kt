@@ -32,14 +32,14 @@ class DefaultAuthSessionRepositoryTest {
             sessionStatusRepository = statusRepository,
         )
 
-        repository.refreshAccessToken("https://portal.yamichi.com")
+        repository.refreshAccessToken("https://example.invalid")
 
         assertEquals(1, statusRepository.markRefreshSucceededCalls)
     }
 
     @Test
     fun refreshAccessToken_marksReauthRequired_whenApiRequiresReauth() = runTest {
-        val baseUrl = "https://portal.yamichi.com"
+        val baseUrl = "https://example.invalid"
         val authClient = FakeOidcAuthClient(
             refreshError = ReauthRequiredException(
                 AuthErrorCode.SESSION_EXPIRED,
@@ -63,7 +63,7 @@ class DefaultAuthSessionRepositoryTest {
 
     @Test
     fun refreshAccessToken_retriesThenMarksSessionInvalid_whenSessionInvalidContinues() = runTest {
-        val baseUrl = "https://portal.yamichi.com"
+        val baseUrl = "https://example.invalid"
         val authClient = FakeOidcAuthClient(
             refreshError = SessionInvalidException("invalid"),
         )
@@ -99,7 +99,7 @@ class DefaultAuthSessionRepositoryTest {
         )
         repository.setAccessToken("active-token")
 
-        repository.refreshAccessToken("https://portal.yamichi.com")
+        repository.refreshAccessToken("https://example.invalid")
 
         assertEquals("active-token", authClient.lastRefreshAccessToken)
     }
@@ -115,7 +115,7 @@ class DefaultAuthSessionRepositoryTest {
         )
         repository.setAccessToken("active-token")
 
-        repository.logout("https://portal.yamichi.com")
+        repository.logout("https://example.invalid")
 
         assertEquals(1, authClient.logoutCalls)
         assertEquals(1, statusRepository.clearSessionCalls)

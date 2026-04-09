@@ -39,7 +39,7 @@ class HttpMovementApiGatewayTest {
             )
         } catch (error: UnauthorizedApiException) {
             assertTrue(error.message.orEmpty().contains("code=401"))
-            assertTrue(error.message.orEmpty().contains("unauthorized"))
+            assertTrue(error.message.orEmpty().contains("responseBodyPresent=true"))
             return@runTest
         }
 
@@ -93,7 +93,7 @@ class HttpMovementApiGatewayTest {
             )
         } catch (error: UnauthorizedApiException) {
             assertTrue(error.message.orEmpty().contains("code=401"))
-            assertTrue(error.message.orEmpty().contains("token expired"))
+            assertTrue(error.message.orEmpty().contains("responseBodyPresent=true"))
             return@runTest
         }
 
@@ -119,7 +119,7 @@ class HttpMovementApiGatewayTest {
             )
         } catch (error: DuplicateMovementLogException) {
             assertTrue(error.message.orEmpty().contains("code=409"))
-            assertTrue(error.message.orEmpty().contains("duplicate"))
+            assertTrue(error.message.orEmpty().contains("responseBodyPresent=true"))
             return@runTest
         }
 
@@ -127,7 +127,7 @@ class HttpMovementApiGatewayTest {
     }
 
     @Test
-    fun uploadMovementLog_includesValidationErrorBodyWhenUnprocessable() = runTest {
+    fun uploadMovementLog_marksValidationBodyPresenceWhenUnprocessable() = runTest {
         val errorBody = """{"detail":[{"loc":["body","Activity"],"msg":"invalid activity","type":"value_error"}]}"""
         server.enqueue(
             MockResponse()
@@ -150,8 +150,7 @@ class HttpMovementApiGatewayTest {
             )
         } catch (error: MovementApiException) {
             assertTrue(error.message.orEmpty().contains("code=422"))
-            assertTrue(error.message.orEmpty().contains("invalid activity"))
-            assertTrue(error.message.orEmpty().contains("Activity"))
+            assertTrue(error.message.orEmpty().contains("responseBodyPresent=true"))
             return@runTest
         }
 

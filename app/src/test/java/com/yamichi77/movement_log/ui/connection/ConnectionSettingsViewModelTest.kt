@@ -100,7 +100,7 @@ class ConnectionSettingsViewModelTest {
         )
 
         advanceUntilIdle()
-        viewModel.onBaseUrlChanged("https://portal.yamichi.com")
+        viewModel.onBaseUrlChanged("https://example.invalid")
         viewModel.onUploadPathChanged("/api/movelog")
         viewModel.onConnectivityTestClick()
 
@@ -130,7 +130,7 @@ class ConnectionSettingsViewModelTest {
         )
 
         advanceUntilIdle()
-        viewModel.onBaseUrlChanged("https://portal.yamichi.com")
+        viewModel.onBaseUrlChanged("https://example.invalid")
         viewModel.onUploadPathChanged("/api/movelog")
         viewModel.onConnectivityTestClick()
 

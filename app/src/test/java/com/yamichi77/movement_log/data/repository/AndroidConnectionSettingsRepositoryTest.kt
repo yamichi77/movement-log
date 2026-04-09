@@ -20,7 +20,7 @@ class AndroidConnectionSettingsRepositoryTest {
 
         val token = resolveConnectivityToken(
             authSessionRepository = repository,
-            baseUrl = "https://portal.yamichi.com",
+            baseUrl = "https://example.invalid",
         )
 
         assertEquals("active-token", token)
@@ -36,7 +36,7 @@ class AndroidConnectionSettingsRepositoryTest {
 
         val token = resolveConnectivityToken(
             authSessionRepository = repository,
-            baseUrl = "https://portal.yamichi.com",
+            baseUrl = "https://example.invalid",
         )
 
         assertEquals("refreshed-token", token)
