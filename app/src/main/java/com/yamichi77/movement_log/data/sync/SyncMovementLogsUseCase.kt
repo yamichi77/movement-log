@@ -32,6 +32,7 @@ class SyncMovementLogsUseCase(
     suspend fun sync(limit: Int = DefaultUploadLimit): SyncMovementLogsResult {
         logDebug("sync: start limit=$limit")
         val now = nowEpochMillis()
+        cleanupUploadedLogsIfDateChanged(now)
         val settings = connectionSettingsRepository.settings.first()
         val settingsError = validateSettings(settings)
         if (settingsError != null) {
@@ -92,6 +93,16 @@ class SyncMovementLogsUseCase(
                 SyncMovementLogsResult.Failure(detail)
             }
         }
+    }
+
+    private suspend fun cleanupUploadedLogsIfDateChanged(nowEpochMillis: Long) {
+        val latestRecordedAtEpochMillis = movementLogUploadRepository.getLatestUploadedRecordedAtEpochMillis() ?: return
+        val today = Instant.ofEpochMilli(nowEpochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+        val latestLogDate = Instant.ofEpochMilli(latestRecordedAtEpochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+        if (latestLogDate == today) return
+
+        movementLogUploadRepository.deleteUploaded()
+        logDebug("cleanupUploadedLogsIfDateChanged: deleted uploaded logs latestLogDate=$latestLogDate today=$today")
     }
 
     private suspend fun uploadWithRefresh(

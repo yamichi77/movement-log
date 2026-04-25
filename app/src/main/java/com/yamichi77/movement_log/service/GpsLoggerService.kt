@@ -10,7 +10,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityTransition
@@ -42,6 +44,93 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
+internal fun resolveTransitionPendingIntentFlags(sdkInt: Int): Int =
+    PendingIntent.FLAG_UPDATE_CURRENT or if (sdkInt >= Build.VERSION_CODES.S) {
+        // Activity Recognition writes transition results into the PendingIntent on Android 12+.
+        PendingIntent.FLAG_MUTABLE
+    } else {
+        0
+    }
+
+internal const val DebugIntervalSeconds = 5
+
+internal fun resolveTrackedActivityStatus(activityType: Int): String? =
+    when (activityType) {
+        DetectedActivity.WALKING -> TrackingActivityStatus.WALKING
+        DetectedActivity.RUNNING -> TrackingActivityStatus.RUNNING
+        DetectedActivity.ON_BICYCLE -> TrackingActivityStatus.BICYCLE
+        DetectedActivity.IN_VEHICLE -> TrackingActivityStatus.VEHICLE
+        DetectedActivity.STILL -> TrackingActivityStatus.STILL
+        else -> null
+    }
+
+internal fun resolveNextActivityStatus(
+    activityType: Int,
+    transitionType: Int,
+    currentActivityStatus: String,
+): String? {
+    val mappedStatus = resolveTrackedActivityStatus(activityType) ?: return null
+    return when (transitionType) {
+        ActivityTransition.ACTIVITY_TRANSITION_ENTER -> mappedStatus
+        ActivityTransition.ACTIVITY_TRANSITION_EXIT -> {
+            if (mappedStatus == TrackingActivityStatus.STILL || currentActivityStatus == mappedStatus) {
+                TrackingActivityStatus.UNKNOWN
+            } else {
+                currentActivityStatus
+            }
+        }
+        else -> currentActivityStatus
+    }
+}
+
+internal data class LocationRequestParameters(
+    val intervalSeconds: Int,
+    val highAccuracy: Boolean,
+)
+
+internal fun resolveLocationRequestParameters(
+    activityStatus: String,
+    currentFrequencySettings: TrackingFrequencySettings,
+    debugGpsMode: Boolean,
+): LocationRequestParameters {
+    if (debugGpsMode) {
+        return LocationRequestParameters(
+            intervalSeconds = DebugIntervalSeconds,
+            highAccuracy = true,
+        )
+    }
+    return when (activityStatus) {
+        TrackingActivityStatus.WALKING -> LocationRequestParameters(
+            intervalSeconds = currentFrequencySettings.walkingSec,
+            highAccuracy = true,
+        )
+        TrackingActivityStatus.RUNNING -> LocationRequestParameters(
+            intervalSeconds = currentFrequencySettings.runningSec,
+            highAccuracy = true,
+        )
+        TrackingActivityStatus.BICYCLE -> LocationRequestParameters(
+            intervalSeconds = currentFrequencySettings.bicycleSec,
+            highAccuracy = true,
+        )
+        TrackingActivityStatus.VEHICLE -> LocationRequestParameters(
+            intervalSeconds = currentFrequencySettings.vehicleSec,
+            highAccuracy = true,
+        )
+        TrackingActivityStatus.UNKNOWN -> LocationRequestParameters(
+            intervalSeconds = currentFrequencySettings.walkingSec,
+            highAccuracy = true,
+        )
+        TrackingActivityStatus.STILL -> LocationRequestParameters(
+            intervalSeconds = currentFrequencySettings.stillSec,
+            highAccuracy = false,
+        )
+        else -> LocationRequestParameters(
+            intervalSeconds = currentFrequencySettings.stillSec,
+            highAccuracy = false,
+        )
+    }
+}
+
 class GpsLoggerService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var moveLogDao: MoveLogDao
@@ -58,7 +147,7 @@ class GpsLoggerService : Service() {
         TrackingActivityStatus.STILL
     }
     private var currentLocationRequest: LocationRequest = createLocationRequest(
-        intervalSeconds = if (debugGpsMode) DEBUG_INTERVAL_SECONDS else currentFrequencySettings.stillSec,
+        intervalSeconds = if (debugGpsMode) DebugIntervalSeconds else currentFrequencySettings.stillSec,
         highAccuracy = debugGpsMode,
     )
 
@@ -97,7 +186,14 @@ class GpsLoggerService : Service() {
 
     private val transitionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent == null || !ActivityTransitionResult.hasResult(intent)) return
+            if (intent == null) {
+                Log.w(LogTag, "transitionReceiver: intent was null")
+                return
+            }
+            if (!ActivityTransitionResult.hasResult(intent)) {
+                Log.w(LogTag, "transitionReceiver: no transition result action=${intent.action}")
+                return
+            }
             val result = ActivityTransitionResult.extractResult(intent) ?: return
             result.transitionEvents.forEach { event ->
                 handleActivityTransition(event)
@@ -110,11 +206,12 @@ class GpsLoggerService : Service() {
     }
 
     private val transitionPendingIntent: PendingIntent by lazy {
+        val flags = resolveTransitionPendingIntentFlags(Build.VERSION.SDK_INT)
         PendingIntent.getBroadcast(
             this,
             0,
             Intent(transitionAction).setPackage(packageName),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            flags,
         )
     }
 
@@ -210,50 +307,72 @@ class GpsLoggerService : Service() {
     @SuppressLint("MissingPermission")
     private fun startActivityTransitionMonitoring() {
         if (debugGpsMode) return
-        if (!PermissionUtils.hasActivityRecognitionPermission(this)) return
+        if (!PermissionUtils.hasActivityRecognitionPermission(this)) {
+            Log.w(LogTag, "startActivityTransitionMonitoring: permission missing")
+            return
+        }
 
         val request = ActivityTransitionRequest(
             listOf(
                 createEnterTransition(DetectedActivity.WALKING),
+                createExitTransition(DetectedActivity.WALKING),
                 createEnterTransition(DetectedActivity.RUNNING),
+                createExitTransition(DetectedActivity.RUNNING),
                 createEnterTransition(DetectedActivity.ON_BICYCLE),
+                createExitTransition(DetectedActivity.ON_BICYCLE),
                 createEnterTransition(DetectedActivity.IN_VEHICLE),
+                createExitTransition(DetectedActivity.IN_VEHICLE),
                 createEnterTransition(DetectedActivity.STILL),
+                createExitTransition(DetectedActivity.STILL),
             ),
         )
-        runCatching {
-            ActivityRecognition.getClient(this).requestActivityTransitionUpdates(
+        ActivityRecognition.getClient(this)
+            .requestActivityTransitionUpdates(
                 request,
                 transitionPendingIntent,
             )
-        }
+            .addOnSuccessListener {
+                Log.d(LogTag, "startActivityTransitionMonitoring: registered")
+            }
+            .addOnFailureListener { error ->
+                Log.e(LogTag, "startActivityTransitionMonitoring: failed", error)
+            }
     }
 
     @SuppressLint("MissingPermission")
     private fun stopActivityTransitionMonitoring() {
         if (debugGpsMode) return
         if (!PermissionUtils.hasActivityRecognitionPermission(this)) return
-        runCatching {
-            ActivityRecognition.getClient(this).removeActivityTransitionUpdates(transitionPendingIntent)
-        }
+        ActivityRecognition.getClient(this)
+            .removeActivityTransitionUpdates(transitionPendingIntent)
+            .addOnFailureListener { error ->
+                Log.w(LogTag, "stopActivityTransitionMonitoring: failed", error)
+            }
     }
 
     private fun createEnterTransition(activityType: Int): ActivityTransition =
+        createTransition(activityType, ActivityTransition.ACTIVITY_TRANSITION_ENTER)
+
+    private fun createExitTransition(activityType: Int): ActivityTransition =
+        createTransition(activityType, ActivityTransition.ACTIVITY_TRANSITION_EXIT)
+
+    private fun createTransition(activityType: Int, transitionType: Int): ActivityTransition =
         ActivityTransition.Builder()
             .setActivityType(activityType)
-            .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
+            .setActivityTransition(transitionType)
             .build()
 
     private fun handleActivityTransition(event: ActivityTransitionEvent) {
         if (debugGpsMode) return
-        val nextStatus = when (event.activityType) {
-            DetectedActivity.WALKING -> TrackingActivityStatus.WALKING
-            DetectedActivity.RUNNING -> TrackingActivityStatus.RUNNING
-            DetectedActivity.ON_BICYCLE -> TrackingActivityStatus.BICYCLE
-            DetectedActivity.IN_VEHICLE -> TrackingActivityStatus.VEHICLE
-            DetectedActivity.STILL -> TrackingActivityStatus.STILL
-            else -> TrackingActivityStatus.UNKNOWN
-        }
+        val nextStatus = resolveNextActivityStatus(
+            activityType = event.activityType,
+            transitionType = event.transitionType,
+            currentActivityStatus = currentActivityStatus,
+        ) ?: return
+        Log.d(
+            LogTag,
+            "handleActivityTransition: type=${event.activityType} transition=${event.transitionType} nextStatus=$nextStatus",
+        )
         currentActivityStatus = nextStatus
         TrackingStateStore.updateActivity(nextStatus)
         applyLocationRequestForActivity(nextStatus)
@@ -274,40 +393,11 @@ class GpsLoggerService : Service() {
     }
 
     private fun resolveLocationRequestParameters(activityStatus: String): LocationRequestParameters {
-        if (debugGpsMode) {
-            return LocationRequestParameters(
-                intervalSeconds = DEBUG_INTERVAL_SECONDS,
-                highAccuracy = true,
-            )
-        }
-        return when (activityStatus) {
-            TrackingActivityStatus.WALKING -> LocationRequestParameters(
-                intervalSeconds = currentFrequencySettings.walkingSec,
-                highAccuracy = true,
-            )
-            TrackingActivityStatus.RUNNING -> LocationRequestParameters(
-                intervalSeconds = currentFrequencySettings.runningSec,
-                highAccuracy = true,
-            )
-            TrackingActivityStatus.BICYCLE -> LocationRequestParameters(
-                intervalSeconds = currentFrequencySettings.bicycleSec,
-                highAccuracy = true,
-            )
-            TrackingActivityStatus.VEHICLE -> LocationRequestParameters(
-                intervalSeconds = currentFrequencySettings.vehicleSec,
-                highAccuracy = true,
-            )
-            TrackingActivityStatus.STILL,
-            TrackingActivityStatus.UNKNOWN,
-            -> LocationRequestParameters(
-                intervalSeconds = currentFrequencySettings.stillSec,
-                highAccuracy = false,
-            )
-            else -> LocationRequestParameters(
-                intervalSeconds = currentFrequencySettings.stillSec,
-                highAccuracy = false,
-            )
-        }
+        return com.yamichi77.movement_log.service.resolveLocationRequestParameters(
+            activityStatus = activityStatus,
+            currentFrequencySettings = currentFrequencySettings,
+            debugGpsMode = debugGpsMode,
+        )
     }
 
     private fun createLocationRequest(intervalSeconds: Int, highAccuracy: Boolean): LocationRequest {
@@ -330,6 +420,8 @@ class GpsLoggerService : Service() {
                 locationCallback,
                 mainLooper,
             )
+        }.onFailure { error ->
+            Log.e(LogTag, "startLocationUpdates: failed", error)
         }
     }
 
@@ -338,14 +430,9 @@ class GpsLoggerService : Service() {
     }
 
     private companion object {
+        private const val LogTag = "GpsLoggerService"
         private const val NOTIFICATION_CHANNEL_ID = "gps_logger_service_notification_channel"
         private const val NOTIFICATION_ID = 200
 
-        private const val DEBUG_INTERVAL_SECONDS = 5
     }
-
-    private data class LocationRequestParameters(
-        val intervalSeconds: Int,
-        val highAccuracy: Boolean,
-    )
 }

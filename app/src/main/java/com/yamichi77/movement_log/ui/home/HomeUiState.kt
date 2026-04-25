@@ -16,4 +16,6 @@ data class HomeUiState(
     val lastPreviewLatitude: Double? = null,
     val lastPreviewLongitude: Double? = null,
     val isMapEnabled: Boolean = false,
+    val isLoggingOut: Boolean = false,
+    val logoutErrorMessage: String? = null,
 )

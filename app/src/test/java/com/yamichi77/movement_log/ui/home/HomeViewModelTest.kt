@@ -2,11 +2,17 @@ package com.yamichi77.movement_log.ui.home
 
 import android.app.Application
 import com.yamichi77.movement_log.MainDispatcherRule
+import com.yamichi77.movement_log.data.auth.AuthErrorCode
+import com.yamichi77.movement_log.data.auth.AuthNavigationEvent
+import com.yamichi77.movement_log.data.auth.AuthNavigationEventBus
+import com.yamichi77.movement_log.data.repository.ConnectionSettingsRepository
+import com.yamichi77.movement_log.data.repository.ConnectivityTestResult
 import com.yamichi77.movement_log.data.repository.HistoryMapPoint
 import com.yamichi77.movement_log.data.repository.HistoryMapSnapshot
 import com.yamichi77.movement_log.data.repository.HomeTrackingSnapshot
 import com.yamichi77.movement_log.data.repository.LogTableSnapshot
 import com.yamichi77.movement_log.data.repository.MovementLogRepository
+import com.yamichi77.movement_log.data.settings.ConnectionSettings
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +49,7 @@ class HomeViewModelTest {
         val viewModel = HomeViewModel(
             application = Application(),
             repository = fakeRepository,
+            connectionSettingsRepository = FakeConnectionSettingsRepository(),
         )
         val collectJob = backgroundScope.launch {
             viewModel.uiState.collect {}
@@ -64,6 +71,7 @@ class HomeViewModelTest {
         val viewModel = HomeViewModel(
             application = Application(),
             repository = fakeRepository,
+            connectionSettingsRepository = FakeConnectionSettingsRepository(),
         )
         val collectJob = backgroundScope.launch {
             viewModel.uiState.collect {}
@@ -102,6 +110,7 @@ class HomeViewModelTest {
         val viewModel = HomeViewModel(
             application = Application(),
             repository = fakeRepository,
+            connectionSettingsRepository = FakeConnectionSettingsRepository(),
         )
 
         advanceUntilIdle()
@@ -119,6 +128,7 @@ class HomeViewModelTest {
         val viewModel = HomeViewModel(
             application = Application(),
             repository = fakeRepository,
+            connectionSettingsRepository = FakeConnectionSettingsRepository(),
         )
         val collectJob = backgroundScope.launch {
             viewModel.uiState.collect {}
@@ -158,6 +168,61 @@ class HomeViewModelTest {
             viewModel.uiState.value.lastPreviewLongitude ?: Double.NaN,
             0.0,
         )
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun onLogoutClick_callsRepositoryAndRequestsLogin() = runTest {
+        AuthNavigationEventBus.clear()
+        val fakeRepository = FakeMovementLogRepository()
+        val fakeConnectionSettingsRepository = FakeConnectionSettingsRepository()
+        val viewModel = HomeViewModel(
+            application = Application(),
+            repository = fakeRepository,
+            connectionSettingsRepository = fakeConnectionSettingsRepository,
+        )
+        val collectJob = backgroundScope.launch {
+            viewModel.uiState.collect {}
+        }
+
+        advanceUntilIdle()
+        viewModel.onLogoutClick()
+        advanceUntilIdle()
+
+        assertEquals(1, fakeConnectionSettingsRepository.logoutCallCount)
+        assertEquals(false, viewModel.uiState.value.isLoggingOut)
+        assertEquals(null, viewModel.uiState.value.logoutErrorMessage)
+        val event = AuthNavigationEventBus.event.value as? AuthNavigationEvent.RequireLogin
+        assertEquals(AuthErrorCode.UNKNOWN, event?.reason)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun onLogoutClick_whenRepositoryThrows_setsErrorAndDoesNotRequestLogin() = runTest {
+        AuthNavigationEventBus.clear()
+        val fakeRepository = FakeMovementLogRepository()
+        val fakeConnectionSettingsRepository = FakeConnectionSettingsRepository(
+            shouldFailOnLogout = true,
+        )
+        val viewModel = HomeViewModel(
+            application = Application(),
+            repository = fakeRepository,
+            connectionSettingsRepository = fakeConnectionSettingsRepository,
+        )
+        val collectJob = backgroundScope.launch {
+            viewModel.uiState.collect {}
+        }
+
+        advanceUntilIdle()
+        viewModel.onLogoutClick()
+        advanceUntilIdle()
+
+        assertEquals(1, fakeConnectionSettingsRepository.logoutCallCount)
+        assertEquals(false, viewModel.uiState.value.isLoggingOut)
+        assertTrue(viewModel.uiState.value.logoutErrorMessage != null)
+        assertEquals(null, AuthNavigationEventBus.event.value)
 
         collectJob.cancel()
     }
@@ -211,6 +276,29 @@ class HomeViewModelTest {
 
         override suspend fun stopCollecting() {
             stopCollectingCallCount += 1
+        }
+    }
+
+    private class FakeConnectionSettingsRepository(
+        private val shouldFailOnLogout: Boolean = false,
+    ) : ConnectionSettingsRepository {
+        override val settings: Flow<ConnectionSettings> = MutableStateFlow(ConnectionSettings.Default)
+        override val sendStatusText: Flow<String> = MutableStateFlow("")
+
+        var logoutCallCount: Int = 0
+
+        override suspend fun save(settings: ConnectionSettings) = Unit
+
+        override suspend fun saveSendStatusText(text: String) = Unit
+
+        override suspend fun testConnectivity(settings: ConnectionSettings): ConnectivityTestResult =
+            ConnectivityTestResult(sessionRotated = false)
+
+        override suspend fun logout() {
+            logoutCallCount += 1
+            if (shouldFailOnLogout) {
+                throw IllegalStateException("logout failed for test")
+            }
         }
     }
 }

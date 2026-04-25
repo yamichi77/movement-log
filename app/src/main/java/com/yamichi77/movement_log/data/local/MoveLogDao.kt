@@ -23,9 +23,15 @@ interface MoveLogDao {
     @Query("SELECT * FROM move_log ORDER BY recordedAtEpochMillis ASC")
     fun observeAllByRecordedAtAsc(): Flow<List<MoveLogEntity>>
 
+    @Query("SELECT recordedAtEpochMillis FROM move_log WHERE isUploaded = 1 ORDER BY recordedAtEpochMillis DESC LIMIT 1")
+    suspend fun getLatestUploadedRecordedAtEpochMillis(): Long?
+
     @Query("SELECT * FROM move_log WHERE isUploaded = 0 ORDER BY recordedAtEpochMillis ASC LIMIT :limit")
     suspend fun getPendingUploads(limit: Int): List<MoveLogEntity>
 
     @Query("UPDATE move_log SET isUploaded = 1 WHERE id IN (:ids)")
     suspend fun markUploaded(ids: List<Long>)
+
+    @Query("DELETE FROM move_log WHERE isUploaded = 1")
+    suspend fun deleteUploaded()
 }

@@ -10,7 +10,11 @@ data class PendingUploadLog(
 )
 
 interface MovementLogUploadRepository {
+    suspend fun getLatestUploadedRecordedAtEpochMillis(): Long?
+
     suspend fun getPendingLogs(limit: Int): List<PendingUploadLog>
 
     suspend fun markUploaded(ids: List<Long>)
+
+    suspend fun deleteUploaded()
 }

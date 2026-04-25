@@ -5,6 +5,9 @@ import com.yamichi77.movement_log.data.local.MoveLogDao
 class AndroidMovementLogUploadRepository(
     private val moveLogDao: MoveLogDao,
 ) : MovementLogUploadRepository {
+    override suspend fun getLatestUploadedRecordedAtEpochMillis(): Long? =
+        moveLogDao.getLatestUploadedRecordedAtEpochMillis()
+
     override suspend fun getPendingLogs(limit: Int): List<PendingUploadLog> =
         moveLogDao.getPendingUploads(limit).map { entity ->
             PendingUploadLog(
@@ -20,5 +23,9 @@ class AndroidMovementLogUploadRepository(
     override suspend fun markUploaded(ids: List<Long>) {
         if (ids.isEmpty()) return
         moveLogDao.markUploaded(ids)
+    }
+
+    override suspend fun deleteUploaded() {
+        moveLogDao.deleteUploaded()
     }
 }

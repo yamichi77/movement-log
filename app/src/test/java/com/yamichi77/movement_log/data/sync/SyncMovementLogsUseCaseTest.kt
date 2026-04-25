@@ -26,6 +26,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.LocalDate
+import java.time.ZoneId
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SyncMovementLogsUseCaseTest {
@@ -151,6 +153,103 @@ class SyncMovementLogsUseCaseTest {
         assertEquals(1, authSessionRepository.refreshCalls)
         assertEquals(2, gateway.uploadAttemptCount)
         assertEquals(1, gateway.uploadCalls.size)
+    }
+
+    @Test
+    fun sync_deletesUploadedLogs_whenLatestUploadedLogDateIsNotToday() = runTest {
+        val zoneId = ZoneId.systemDefault()
+        val now = LocalDate.of(2026, 4, 13).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val yesterday = LocalDate.of(2026, 4, 12).atTime(23, 0).atZone(zoneId).toInstant().toEpochMilli()
+        val settingsRepository = FakeConnectionSettingsRepository(
+            ConnectionSettings(
+                baseUrl = "https://example.invalid",
+                uploadPath = "/api/movelog",
+            ),
+        )
+        val uploadRepository = FakeMovementLogUploadRepository(
+            pendingLogs = emptyList(),
+            latestUploadedRecordedAtEpochMillis = yesterday,
+        )
+        val useCase = SyncMovementLogsUseCase(
+            connectionSettingsRepository = settingsRepository,
+            movementLogUploadRepository = uploadRepository,
+            movementApiGateway = FakeMovementApiGateway(),
+            authSessionRepository = FakeAuthSessionRepository(initialToken = "issued-token"),
+            sessionStatusRepository = FakeAuthSessionStatusRepository(),
+            nowEpochMillis = { now },
+        )
+
+        useCase.sync()
+
+        assertEquals(1, uploadRepository.deleteUploadedCalls)
+    }
+
+    @Test
+    fun sync_deletesUploadedLogs_whenTodayHasPendingLogsButLatestUploadedLogDateIsYesterday() = runTest {
+        val zoneId = ZoneId.systemDefault()
+        val now = LocalDate.of(2026, 4, 13).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val yesterday = LocalDate.of(2026, 4, 12).atTime(23, 0).atZone(zoneId).toInstant().toEpochMilli()
+        val todayPending = LocalDate.of(2026, 4, 13).atTime(0, 5).atZone(zoneId).toInstant().toEpochMilli()
+        val settingsRepository = FakeConnectionSettingsRepository(
+            ConnectionSettings(
+                baseUrl = "https://example.invalid",
+                uploadPath = "/api/movelog",
+            ),
+        )
+        val uploadRepository = FakeMovementLogUploadRepository(
+            pendingLogs = listOf(
+                PendingUploadLog(
+                    id = 1L,
+                    recordedAtEpochMillis = todayPending,
+                    latitude = 35.0,
+                    longitude = 139.0,
+                    accuracy = 3.0f,
+                    activityStatus = "STILL",
+                ),
+            ),
+            latestUploadedRecordedAtEpochMillis = yesterday,
+        )
+        val useCase = SyncMovementLogsUseCase(
+            connectionSettingsRepository = settingsRepository,
+            movementLogUploadRepository = uploadRepository,
+            movementApiGateway = FakeMovementApiGateway(),
+            authSessionRepository = FakeAuthSessionRepository(initialToken = "issued-token"),
+            sessionStatusRepository = FakeAuthSessionStatusRepository(),
+            nowEpochMillis = { now },
+        )
+
+        useCase.sync()
+
+        assertEquals(1, uploadRepository.deleteUploadedCalls)
+    }
+
+    @Test
+    fun sync_keepsUploadedLogs_whenLatestUploadedLogDateIsToday() = runTest {
+        val zoneId = ZoneId.systemDefault()
+        val now = LocalDate.of(2026, 4, 13).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val today = LocalDate.of(2026, 4, 13).atTime(8, 0).atZone(zoneId).toInstant().toEpochMilli()
+        val settingsRepository = FakeConnectionSettingsRepository(
+            ConnectionSettings(
+                baseUrl = "https://example.invalid",
+                uploadPath = "/api/movelog",
+            ),
+        )
+        val uploadRepository = FakeMovementLogUploadRepository(
+            pendingLogs = emptyList(),
+            latestUploadedRecordedAtEpochMillis = today,
+        )
+        val useCase = SyncMovementLogsUseCase(
+            connectionSettingsRepository = settingsRepository,
+            movementLogUploadRepository = uploadRepository,
+            movementApiGateway = FakeMovementApiGateway(),
+            authSessionRepository = FakeAuthSessionRepository(initialToken = "issued-token"),
+            sessionStatusRepository = FakeAuthSessionStatusRepository(),
+            nowEpochMillis = { now },
+        )
+
+        useCase.sync()
+
+        assertEquals(0, uploadRepository.deleteUploadedCalls)
     }
 
     @Test
@@ -285,13 +384,21 @@ class SyncMovementLogsUseCaseTest {
 
     private class FakeMovementLogUploadRepository(
         private val pendingLogs: List<PendingUploadLog>,
+        private val latestUploadedRecordedAtEpochMillis: Long? = null,
     ) : MovementLogUploadRepository {
         val markedUploadedIds = mutableListOf<Long>()
+        var deleteUploadedCalls: Int = 0
+
+        override suspend fun getLatestUploadedRecordedAtEpochMillis(): Long? = latestUploadedRecordedAtEpochMillis
 
         override suspend fun getPendingLogs(limit: Int): List<PendingUploadLog> = pendingLogs
 
         override suspend fun markUploaded(ids: List<Long>) {
             markedUploadedIds += ids
+        }
+
+        override suspend fun deleteUploaded() {
+            deleteUploadedCalls += 1
         }
     }
 

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.Button
@@ -20,6 +21,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +59,7 @@ fun HomeScreen(
         onOpenHistoryMap = onOpenHistoryMap,
         onStartCollecting = viewModel::onStartCollectingClick,
         onStopCollecting = viewModel::onStopCollectingClick,
+        onLogout = viewModel::onLogoutClick,
     )
 }
 
@@ -66,6 +69,7 @@ private fun HomeScreenContent(
     onOpenHistoryMap: () -> Unit,
     onStartCollecting: () -> Unit,
     onStopCollecting: () -> Unit,
+    onLogout: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -82,6 +86,33 @@ private fun HomeScreenContent(
                 text = stringResource(R.string.home_overview_subtitle),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        OutlinedButton(
+            onClick = onLogout,
+            enabled = !uiState.isLoggingOut,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Logout,
+                contentDescription = null,
+            )
+            Spacer(modifier = Modifier.size(Spacing.xs))
+            Text(
+                if (uiState.isLoggingOut) {
+                    stringResource(R.string.connection_settings_logging_out)
+                } else {
+                    stringResource(R.string.connection_settings_logout)
+                },
+            )
+        }
+
+        uiState.logoutErrorMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
             )
         }
 
@@ -162,14 +193,14 @@ private fun HomeScreenContent(
         ) {
             Button(
                 onClick = onStartCollecting,
-                enabled = !uiState.isCollecting,
+                enabled = !uiState.isCollecting && !uiState.isLoggingOut,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(stringResource(R.string.home_start_collecting))
             }
             FilledTonalButton(
                 onClick = onStopCollecting,
-                enabled = uiState.isCollecting,
+                enabled = uiState.isCollecting && !uiState.isLoggingOut,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(stringResource(R.string.home_stop_collecting))
@@ -301,6 +332,7 @@ private fun HomeScreenPreview() {
             onOpenHistoryMap = {},
             onStartCollecting = {},
             onStopCollecting = {},
+            onLogout = {},
         )
     }
 }

@@ -5,8 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.yamichi77.movement_log.BuildConfig
 import com.yamichi77.movement_log.R
+import com.yamichi77.movement_log.data.auth.AuthErrorCode
+import com.yamichi77.movement_log.data.auth.AuthNavigationEventBus
+import com.yamichi77.movement_log.data.repository.ConnectionSettingsRepository
+import com.yamichi77.movement_log.data.repository.ConnectionSettingsRepositoryProvider
 import com.yamichi77.movement_log.data.repository.MovementLogRepository
 import com.yamichi77.movement_log.data.repository.MovementLogRepositoryProvider
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -21,10 +26,13 @@ class HomeViewModel(
     application: Application,
     private val repository: MovementLogRepository =
         MovementLogRepositoryProvider.get(application),
+    private val connectionSettingsRepository: ConnectionSettingsRepository =
+        ConnectionSettingsRepositoryProvider.get(application),
 ) : AndroidViewModel(application) {
     constructor(application: Application) : this(
         application = application,
         repository = MovementLogRepositoryProvider.get(application),
+        connectionSettingsRepository = ConnectionSettingsRepositoryProvider.get(application),
     )
 
     private val activityStatusStillText: String = runCatching {
@@ -36,11 +44,15 @@ class HomeViewModel(
     private val unknownValueText: String = runCatching {
         application.getString(R.string.home_unknown_value)
     }.getOrDefault("--")
+    private val logoutFailedText: String = runCatching {
+        application.getString(R.string.connection_settings_logout_failed)
+    }.getOrDefault("Failed to logout")
     private val isMapEnabled: Boolean = BuildConfig.MAPS_API_KEY.isNotBlank()
     private val dateTimeFormatter = DateTimeFormatter.ofPattern(
         "yyyy-MM-dd HH:mm:ss",
         Locale.JAPAN,
     )
+    private val logoutUiState = MutableStateFlow(HomeLogoutUiState())
 
     init {
         viewModelScope.launch {
@@ -51,7 +63,8 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = combine(
         repository.homeTrackingSnapshot,
         repository.historyMapSnapshot,
-    ) { homeSnapshot, historySnapshot ->
+        logoutUiState,
+    ) { homeSnapshot, historySnapshot, logoutState ->
         val previewPoints = historySnapshot.points.takeLast(HOME_MAP_PREVIEW_POINT_LIMIT)
         val lastPreviewPoint = previewPoints.lastOrNull()
         HomeUiState(
@@ -71,6 +84,8 @@ class HomeViewModel(
             lastPreviewLatitude = lastPreviewPoint?.latitude,
             lastPreviewLongitude = lastPreviewPoint?.longitude,
             isMapEnabled = isMapEnabled,
+            isLoggingOut = logoutState.isLoggingOut,
+            logoutErrorMessage = logoutState.errorMessage,
         )
     }
         .stateIn(
@@ -95,6 +110,22 @@ class HomeViewModel(
         }
     }
 
+    fun onLogoutClick() {
+        viewModelScope.launch {
+            logoutUiState.value = HomeLogoutUiState(isLoggingOut = true)
+            runCatching {
+                connectionSettingsRepository.logout()
+            }.onSuccess {
+                logoutUiState.value = HomeLogoutUiState()
+                AuthNavigationEventBus.requireLogin(reason = AuthErrorCode.UNKNOWN)
+            }.onFailure { error ->
+                logoutUiState.value = HomeLogoutUiState(
+                    errorMessage = buildLogoutFailureMessage(error),
+                )
+            }
+        }
+    }
+
     private fun formatCoordinate(value: Double?): String {
         if (value == null) return unknownValueText
         return String.format(Locale.US, "%.4f", value)
@@ -102,6 +133,20 @@ class HomeViewModel(
 
     private fun formatDateTime(epochMillis: Long): String = dateTimeFormatter.format(
         Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()),
+    )
+
+    private fun buildLogoutFailureMessage(error: Throwable): String {
+        val message = error.message?.takeIf { it.isNotBlank() }
+        return if (message == null) {
+            logoutFailedText
+        } else {
+            "$logoutFailedText: $message"
+        }
+    }
+
+    private data class HomeLogoutUiState(
+        val isLoggingOut: Boolean = false,
+        val errorMessage: String? = null,
     )
 
     private companion object {
