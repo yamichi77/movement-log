@@ -1,0 +1,11 @@
+# Copy this file to local.properties and fill in local values.
+# Do not commit local.properties.
+
+sdk.dir=C\:\\Users\\<your-user>\\AppData\\Local\\Android\\Sdk
+MAPS_API_KEY=your_google_maps_api_key
+DEBUG=false
+AUTH_ISSUER=https://example.invalid/realms/example
+AUTH_CLIENT_ID=movementlog-public
+AUTH_REDIRECT_URI=movementlog://auth/callback
+AUTH_SCOPES=openid profile
+AUTH_USE_OFFLINE_ACCESS=false
