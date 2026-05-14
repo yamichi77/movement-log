@@ -1,6 +1,7 @@
 package com.yamichi77.movement_log.service
 
 import android.app.PendingIntent
+import android.app.Service
 import android.os.Build
 import com.google.android.gms.location.ActivityTransition
 import com.google.android.gms.location.DetectedActivity
@@ -46,6 +47,41 @@ class GpsLoggerServiceTest {
         )
 
         assertEquals(TrackingActivityStatus.WALKING, nextStatus)
+    }
+
+    @Test
+    fun resolveActivityUpdateStatus_onFoot_returnsWalking() {
+        val status = resolveActivityUpdateStatus(DetectedActivity.ON_FOOT)
+
+        assertEquals(TrackingActivityStatus.WALKING, status)
+    }
+
+    @Test
+    fun resolveActivityUpdateStatus_unknown_returnsUnknown() {
+        val status = resolveActivityUpdateStatus(DetectedActivity.UNKNOWN)
+
+        assertEquals(TrackingActivityStatus.UNKNOWN, status)
+    }
+
+    @Test
+    fun resolveActivityUpdateStatus_tilting_returnsNull() {
+        val status = resolveActivityUpdateStatus(DetectedActivity.TILTING)
+
+        assertEquals(null, status)
+    }
+
+    @Test
+    fun resolveGpsLoggerStartCommandResult_foregroundStarted_returnsSticky() {
+        val result = resolveGpsLoggerStartCommandResult(startedForeground = true)
+
+        assertEquals(Service.START_STICKY, result)
+    }
+
+    @Test
+    fun resolveGpsLoggerStartCommandResult_foregroundRejected_returnsNotSticky() {
+        val result = resolveGpsLoggerStartCommandResult(startedForeground = false)
+
+        assertEquals(Service.START_NOT_STICKY, result)
     }
 
     @Test

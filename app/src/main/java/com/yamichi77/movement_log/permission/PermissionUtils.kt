@@ -11,6 +11,7 @@ data class PermissionStatusItem(
     val labelResId: Int,
     val permission: String,
     val granted: Boolean,
+    val requestable: Boolean = true,
 )
 
 object PermissionUtils {
@@ -27,11 +28,15 @@ object PermissionUtils {
     }
 
     fun hasRequiredPermissions(context: Context): Boolean =
-        requiredPermissions().all { hasPermission(context, it) }
+        requiredPermissions().all { hasPermission(context, it) } &&
+            hasBackgroundLocationPermission(context)
 
     fun hasLocationPermissions(context: Context): Boolean =
         hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) &&
             hasPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+    fun hasBackgroundLocationPermission(context: Context): Boolean =
+        hasPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
 
     fun hasActivityRecognitionPermission(context: Context): Boolean =
         hasPermission(context, Manifest.permission.ACTIVITY_RECOGNITION)
@@ -47,6 +52,12 @@ object PermissionUtils {
                 labelResId = R.string.permission_coarse_location,
                 permission = Manifest.permission.ACCESS_COARSE_LOCATION,
                 granted = hasPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION),
+            ),
+            PermissionStatusItem(
+                labelResId = R.string.permission_background_location,
+                permission = Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                granted = hasBackgroundLocationPermission(context),
+                requestable = false,
             ),
             PermissionStatusItem(
                 labelResId = R.string.permission_notifications,

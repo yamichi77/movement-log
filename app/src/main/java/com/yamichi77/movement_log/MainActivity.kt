@@ -3,6 +3,7 @@ package com.yamichi77.movement_log
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -238,6 +239,9 @@ fun MovementlogApp() {
                         onRequestPermissions = {
                             permissionLauncher.launch(PermissionUtils.requiredPermissions())
                         },
+                        onOpenAppSettings = {
+                            openAppSettings(context)
+                        },
                     )
                 }
                 composable<AppRoute.Home> {
@@ -305,6 +309,16 @@ private fun looksLikeToken(value: String): Boolean {
     val trimmed = value.trim()
     if (trimmed.length >= 20) return true
     return trimmed.count { it == '.' } >= 2
+}
+
+private fun openAppSettings(context: android.content.Context) {
+    val intent = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", context.packageName, null),
+    ).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(intent)
 }
 
 private fun launchLoginBrowser(context: android.content.Context, loginUri: Uri) {
