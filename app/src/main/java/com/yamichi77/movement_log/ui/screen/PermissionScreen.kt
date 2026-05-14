@@ -35,7 +35,15 @@ import com.yamichi77.movement_log.ui.theme.Spacing
 fun PermissionScreen(
     permissionItems: List<PermissionStatusItem>,
     onRequestPermissions: () -> Unit,
+    onOpenAppSettings: () -> Unit,
 ) {
+    val hasRequestableMissingPermission = permissionItems.any { item ->
+        item.requestable && !item.granted
+    }
+    val hasSettingsOnlyMissingPermission = permissionItems.any { item ->
+        !item.requestable && !item.granted
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -93,10 +101,23 @@ fun PermissionScreen(
 
         Spacer(modifier = Modifier.height(Spacing.xs))
         Button(
-            onClick = onRequestPermissions,
+            onClick = if (hasRequestableMissingPermission) {
+                onRequestPermissions
+            } else {
+                onOpenAppSettings
+            },
+            enabled = hasRequestableMissingPermission || hasSettingsOnlyMissingPermission,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(stringResource(R.string.permission_request))
+            Text(
+                stringResource(
+                    if (hasRequestableMissingPermission) {
+                        R.string.permission_request
+                    } else {
+                        R.string.permission_open_app_permission_settings
+                    },
+                ),
+            )
         }
     }
 }
@@ -129,6 +150,7 @@ private fun PermissionScreenPreview() {
                 ),
             ),
             onRequestPermissions = {},
+            onOpenAppSettings = {},
         )
     }
 }

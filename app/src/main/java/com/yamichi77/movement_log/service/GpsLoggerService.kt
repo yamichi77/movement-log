@@ -3,6 +3,7 @@ package com.yamichi77.movement_log.service
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -10,11 +11,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.google.android.gms.location.ActivityRecognition
+import com.google.android.gms.location.ActivityRecognitionResult
 import com.google.android.gms.location.ActivityTransition
 import com.google.android.gms.location.ActivityTransitionEvent
 import com.google.android.gms.location.ActivityTransitionRequest
@@ -61,6 +65,18 @@ internal fun resolveTrackedActivityStatus(activityType: Int): String? =
         DetectedActivity.ON_BICYCLE -> TrackingActivityStatus.BICYCLE
         DetectedActivity.IN_VEHICLE -> TrackingActivityStatus.VEHICLE
         DetectedActivity.STILL -> TrackingActivityStatus.STILL
+        else -> null
+    }
+
+internal fun resolveActivityUpdateStatus(activityType: Int): String? =
+    when (activityType) {
+        DetectedActivity.WALKING -> TrackingActivityStatus.WALKING
+        DetectedActivity.RUNNING -> TrackingActivityStatus.RUNNING
+        DetectedActivity.ON_BICYCLE -> TrackingActivityStatus.BICYCLE
+        DetectedActivity.IN_VEHICLE -> TrackingActivityStatus.VEHICLE
+        DetectedActivity.STILL -> TrackingActivityStatus.STILL
+        DetectedActivity.ON_FOOT -> TrackingActivityStatus.WALKING
+        DetectedActivity.UNKNOWN -> TrackingActivityStatus.UNKNOWN
         else -> null
     }
 
@@ -131,6 +147,13 @@ internal fun resolveLocationRequestParameters(
     }
 }
 
+internal fun resolveGpsLoggerStartCommandResult(startedForeground: Boolean): Int =
+    if (startedForeground) {
+        Service.START_STICKY
+    } else {
+        Service.START_NOT_STICKY
+    }
+
 class GpsLoggerService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var moveLogDao: MoveLogDao
@@ -184,25 +207,36 @@ class GpsLoggerService : Service() {
         }
     }
 
-    private val transitionReceiver = object : BroadcastReceiver() {
+    private val activityReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent == null) {
-                Log.w(LogTag, "transitionReceiver: intent was null")
+                Log.w(LogTag, "activityReceiver: intent was null")
                 return
             }
-            if (!ActivityTransitionResult.hasResult(intent)) {
-                Log.w(LogTag, "transitionReceiver: no transition result action=${intent.action}")
-                return
-            }
-            val result = ActivityTransitionResult.extractResult(intent) ?: return
-            result.transitionEvents.forEach { event ->
-                handleActivityTransition(event)
+            when {
+                ActivityTransitionResult.hasResult(intent) -> {
+                    val result = ActivityTransitionResult.extractResult(intent) ?: return
+                    result.transitionEvents.forEach { event ->
+                        handleActivityTransition(event)
+                    }
+                }
+                ActivityRecognitionResult.hasResult(intent) -> {
+                    val result = ActivityRecognitionResult.extractResult(intent) ?: return
+                    handleActivityUpdate(result)
+                }
+                else -> {
+                    Log.w(LogTag, "activityReceiver: no activity result action=${intent.action}")
+                }
             }
         }
     }
 
     private val transitionAction: String by lazy {
         "${applicationContext.packageName}.TRANSITION_ACTION_RECEIVER"
+    }
+
+    private val activityUpdateAction: String by lazy {
+        "${applicationContext.packageName}.ACTIVITY_UPDATE_RECEIVER"
     }
 
     private val transitionPendingIntent: PendingIntent by lazy {
@@ -215,14 +249,27 @@ class GpsLoggerService : Service() {
         )
     }
 
+    private val activityUpdatePendingIntent: PendingIntent by lazy {
+        val flags = resolveTransitionPendingIntentFlags(Build.VERSION.SDK_INT)
+        PendingIntent.getBroadcast(
+            this,
+            1,
+            Intent(activityUpdateAction).setPackage(packageName),
+            flags,
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
         moveLogDao = MovementLogDatabase.getInstance(this).moveLogDao()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         registerReceiver(
-            transitionReceiver,
-            IntentFilter(transitionAction),
+            activityReceiver,
+            IntentFilter().apply {
+                addAction(transitionAction)
+                addAction(activityUpdateAction)
+            },
             Context.RECEIVER_NOT_EXPORTED,
         )
 
@@ -237,10 +284,14 @@ class GpsLoggerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundInternal()
-        if (!PermissionUtils.hasLocationPermissions(this)) {
+        if (!PermissionUtils.hasRequiredPermissions(this)) {
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (!startForegroundInternal()) {
+            TrackingStateStore.setCollecting(false)
+            stopSelf(startId)
+            return resolveGpsLoggerStartCommandResult(startedForeground = false)
         }
 
         hasStartedTracking = true
@@ -253,14 +304,16 @@ class GpsLoggerService : Service() {
         )
         startLocationUpdates()
         startActivityTransitionMonitoring()
-        return START_STICKY
+        startActivityUpdateMonitoring()
+        return resolveGpsLoggerStartCommandResult(startedForeground = true)
     }
 
     override fun onDestroy() {
         hasStartedTracking = false
         stopLocationUpdates()
         stopActivityTransitionMonitoring()
-        runCatching { unregisterReceiver(transitionReceiver) }
+        stopActivityUpdateMonitoring()
+        runCatching { unregisterReceiver(activityReceiver) }
         TrackingStateStore.setCollecting(false)
         serviceScope.cancel()
         super.onDestroy()
@@ -268,7 +321,7 @@ class GpsLoggerService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun startForegroundInternal() {
+    private fun startForegroundInternal(): Boolean {
         createNotificationChannel()
         val openAppIntent = Intent(this, MainActivity::class.java)
         val contentIntent = PendingIntent.getActivity(
@@ -287,7 +340,21 @@ class GpsLoggerService : Service() {
             .setSilent(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        return try {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+            )
+            true
+        } catch (exception: ForegroundServiceStartNotAllowedException) {
+            Log.w(LogTag, "startForegroundInternal: foreground service start not allowed", exception)
+            false
+        } catch (exception: SecurityException) {
+            Log.w(LogTag, "startForegroundInternal: foreground service permission denied", exception)
+            false
+        }
     }
 
     private fun createNotificationChannel() {
@@ -350,6 +417,38 @@ class GpsLoggerService : Service() {
             }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun startActivityUpdateMonitoring() {
+        if (debugGpsMode) return
+        if (!PermissionUtils.hasActivityRecognitionPermission(this)) {
+            Log.w(LogTag, "startActivityUpdateMonitoring: permission missing")
+            return
+        }
+
+        ActivityRecognition.getClient(this)
+            .requestActivityUpdates(
+                ACTIVITY_UPDATE_INTERVAL_MILLIS,
+                activityUpdatePendingIntent,
+            )
+            .addOnSuccessListener {
+                Log.d(LogTag, "startActivityUpdateMonitoring: registered")
+            }
+            .addOnFailureListener { error ->
+                Log.e(LogTag, "startActivityUpdateMonitoring: failed", error)
+            }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopActivityUpdateMonitoring() {
+        if (debugGpsMode) return
+        if (!PermissionUtils.hasActivityRecognitionPermission(this)) return
+        ActivityRecognition.getClient(this)
+            .removeActivityUpdates(activityUpdatePendingIntent)
+            .addOnFailureListener { error ->
+                Log.w(LogTag, "stopActivityUpdateMonitoring: failed", error)
+            }
+    }
+
     private fun createEnterTransition(activityType: Int): ActivityTransition =
         createTransition(activityType, ActivityTransition.ACTIVITY_TRANSITION_ENTER)
 
@@ -373,6 +472,22 @@ class GpsLoggerService : Service() {
             LogTag,
             "handleActivityTransition: type=${event.activityType} transition=${event.transitionType} nextStatus=$nextStatus",
         )
+        updateActivityStatus(nextStatus)
+    }
+
+    private fun handleActivityUpdate(result: ActivityRecognitionResult) {
+        if (debugGpsMode) return
+        val activity = result.mostProbableActivity ?: return
+        val nextStatus = resolveActivityUpdateStatus(activity.type) ?: return
+        Log.d(
+            LogTag,
+            "handleActivityUpdate: type=${activity.type} confidence=${activity.confidence} nextStatus=$nextStatus",
+        )
+        updateActivityStatus(nextStatus)
+    }
+
+    private fun updateActivityStatus(nextStatus: String) {
+        if (currentActivityStatus == nextStatus) return
         currentActivityStatus = nextStatus
         TrackingStateStore.updateActivity(nextStatus)
         applyLocationRequestForActivity(nextStatus)
@@ -433,6 +548,7 @@ class GpsLoggerService : Service() {
         private const val LogTag = "GpsLoggerService"
         private const val NOTIFICATION_CHANNEL_ID = "gps_logger_service_notification_channel"
         private const val NOTIFICATION_ID = 200
+        private const val ACTIVITY_UPDATE_INTERVAL_MILLIS = 60_000L
 
     }
 }
