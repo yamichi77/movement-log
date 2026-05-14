@@ -207,7 +207,7 @@ class GpsLoggerService : Service() {
         }
     }
 
-    private val transitionReceiver = object : BroadcastReceiver() {
+    private val activityReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent == null) {
                 Log.w(LogTag, "activityReceiver: intent was null")
@@ -265,7 +265,7 @@ class GpsLoggerService : Service() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         registerReceiver(
-            transitionReceiver,
+            activityReceiver,
             IntentFilter().apply {
                 addAction(transitionAction)
                 addAction(activityUpdateAction)
@@ -284,7 +284,7 @@ class GpsLoggerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!PermissionUtils.hasLocationPermissions(this)) {
+        if (!PermissionUtils.hasRequiredPermissions(this)) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -313,7 +313,7 @@ class GpsLoggerService : Service() {
         stopLocationUpdates()
         stopActivityTransitionMonitoring()
         stopActivityUpdateMonitoring()
-        runCatching { unregisterReceiver(transitionReceiver) }
+        runCatching { unregisterReceiver(activityReceiver) }
         TrackingStateStore.setCollecting(false)
         serviceScope.cancel()
         super.onDestroy()

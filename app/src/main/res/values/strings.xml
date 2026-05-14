@@ -15,7 +15,7 @@
     <string name="permission_background_location">バックグラウンド位置情報</string>
     <string name="permission_activity_recognition">身体活動</string>
     <string name="permission_notifications">通知</string>
-    <string name="permission_open_location_settings">位置情報設定を開く</string>
+    <string name="permission_open_app_permission_settings">アプリの権限設定を開く</string>
 
     <string name="menu_home">ホーム</string>
     <string name="menu_history_map">履歴マップ</string>

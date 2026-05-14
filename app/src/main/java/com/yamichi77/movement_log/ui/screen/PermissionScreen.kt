@@ -114,7 +114,7 @@ fun PermissionScreen(
                     if (hasRequestableMissingPermission) {
                         R.string.permission_request
                     } else {
-                        R.string.permission_open_location_settings
+                        R.string.permission_open_app_permission_settings
                     },
                 ),
             )
